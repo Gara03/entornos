@@ -9,8 +9,9 @@ using Cinemachine;
 
 
 public class PlayerController : NetworkBehaviour  
-
 {
+    [SerializeField] CharacterController controller;
+
     private TextMeshProUGUI coinText;
 
     
