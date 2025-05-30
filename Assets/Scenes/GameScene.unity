@@ -1956,6 +1956,8 @@ GameObject:
   - component: {fileID: 1396217713}
   - component: {fileID: 1396217712}
   - component: {fileID: 1396217711}
+  - component: {fileID: 1396217716}
+  - component: {fileID: 1396217717}
   m_Layer: 5
   m_Name: CanvasPlayer
   m_TagString: Untagged
@@ -2061,6 +2063,43 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 0}
+--- !u!114 &1396217716
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1396217710}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 1122479671
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+--- !u!114 &1396217717
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1396217710}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd85fae53cd88ac45a4145685eaee041, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _NetworkManager: {fileID: 1462734842}
+  humanCountText: {fileID: 710827814}
+  zombieCountText: {fileID: 1726941680}
+  globalCoinText: {fileID: 634567574}
 --- !u!1 &1462734840
 GameObject:
   m_ObjectHideFlags: 0
@@ -2167,10 +2206,10 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1720106049}
+  - component: {fileID: 1720106053}
   - component: {fileID: 1720106052}
   - component: {fileID: 1720106051}
   - component: {fileID: 1720106050}
-  - component: {fileID: 1720106053}
   - component: {fileID: 1720106048}
   m_Layer: 0
   m_Name: LevelManager

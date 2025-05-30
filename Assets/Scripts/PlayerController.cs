@@ -18,6 +18,8 @@ public class PlayerController : NetworkBehaviour
 
     [Header("Character settings")]
     public bool isZombie = false;
+    //public NetworkVariable<bool> isZombie = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone);
+
     public string uniqueID;
 
     [Header("Movement Settings")]
@@ -40,6 +42,8 @@ public class PlayerController : NetworkBehaviour
         if (mainCameraTransform == null && Camera.main != null)
             mainCameraTransform = Camera.main.transform;  // asignar cámara principal si no está seteada
     }
+
+
 
     void Start()
     {

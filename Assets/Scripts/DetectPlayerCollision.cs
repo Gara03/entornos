@@ -7,14 +7,24 @@ public class DetectPlayerCollision : NetworkBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (!IsServer) return; // Solo servidor maneja la lógica
+        UIManager.Instance?.AddGlobalCoinServerRpc();
+
+        if (!IsServer) return;
 
         if (other.CompareTag("Player"))
         {
             PlayerController player = other.GetComponent<PlayerController>();
-            if (player != null && player.isZombie == false)
+            if (player != null && !player.isZombie)
             {
-                player.CoinCollected();
+                player.CoinCollected(); // Actualiza solo el UI local
+
+                // Incrementa contador global
+                UIManager uiManager = FindObjectOfType<UIManager>();
+                if (uiManager != null)
+                {
+                    uiManager.AddGlobalCoinServerRpc(); // llama al servidor para que aumente la moneda global
+                }
+
                 AudioSource.PlayClipAtPoint(pickupSound, transform.position);
                 Destroy(gameObject);
             }

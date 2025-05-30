@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TMPro;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -27,6 +28,7 @@ public class GameManager : NetworkBehaviour
     private List<Vector3> humanSpawnPoints = new List<Vector3>();
     private List<Vector3> zombieSpawnPoints = new List<Vector3>();
     private float remainingSeconds;
+
 
     private int seed;
     public LevelBuilder levelBuilder;
