@@ -58,8 +58,8 @@ public class GameManager : NetworkBehaviour
         if (GUILayout.Button("Client"))
         {
             _NetworkManager.StartClient();
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            //Cursor.lockState = CursorLockMode.Locked;
+            //Cursor.visible = false;
         }
         if (GUILayout.Button("Server"))
         {

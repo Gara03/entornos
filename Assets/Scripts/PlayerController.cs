@@ -116,6 +116,7 @@ public class PlayerController : NetworkBehaviour
         }
     }
 
+
     void UpdateCoinUI()
     {
         if (coinText != null)

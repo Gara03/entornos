@@ -425,6 +425,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3e9ed4a094f5c68428bca09ff134234b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  zombiePrefab: {fileID: 4242402687381181303}
 --- !u!114 &1248720661319515159
 MonoBehaviour:
   m_ObjectHideFlags: 0
