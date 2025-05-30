@@ -29,8 +29,6 @@ public class GameManager : NetworkBehaviour
     private float remainingSeconds;
 
     public LevelBuilder levelBuilder;
-    public string PlayerPrefabName => playerPrefab.name;
-    public string ZombiePrefabName => zombiePrefab.name;
 
     private Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
 
@@ -53,7 +51,6 @@ public class GameManager : NetworkBehaviour
         if (GUILayout.Button("Host"))
         {
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
-
             _NetworkManager.StartHost();
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
@@ -62,7 +59,6 @@ public class GameManager : NetworkBehaviour
         if (GUILayout.Button("Server"))
         {
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
-
             _NetworkManager.StartServer();
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
@@ -91,7 +87,6 @@ public class GameManager : NetworkBehaviour
 
         remainingSeconds = minutes * 60;
     }
-
 
     public override void OnNetworkSpawn()
     {
@@ -140,20 +135,24 @@ public class GameManager : NetworkBehaviour
 
         bool isHuman = AsignarRol(clientId);
         Vector3 spawnPosition = ObtenerPuntoDeSpawn(isHuman);
-
         GameObject prefab = isHuman ? playerPrefab : zombiePrefab;
+
+        // Creamos el objeto pero aún no lo spawneamos
         GameObject instancia = Instantiate(prefab, spawnPosition, Quaternion.identity);
 
+        // Spawneamos como PlayerObject (esto asigna ownership y activa IsOwner correctamente)
         NetworkObject netObj = instancia.GetComponent<NetworkObject>();
-        netObj.Spawn(); // Spawn manual SIN usar SpawnAsPlayerObject
-        netObj.ChangeOwnership(clientId); // Le damos ownership al jugador
+        netObj.SpawnAsPlayerObject(clientId);
 
+        // Marcar como zombi en el PlayerController
         PlayerController pc = instancia.GetComponent<PlayerController>();
-        if (pc != null) pc.isZombie = !isHuman;
+        if (pc != null)
+        {
+            pc.isZombie = !isHuman;
+        }
 
         Debug.Log($"[GameManager] Jugador {clientId} {(isHuman ? "Humano" : "Zombi")} instanciado en {spawnPosition}");
     }
-
 
     private bool AsignarRol(ulong clientId)
     {
@@ -166,43 +165,37 @@ public class GameManager : NetworkBehaviour
             else totalHumanos++;
         }
 
-        //1
+        // Lógica original tuya, respetada al 100%
         if (totalZombies == 0 && totalHumanos == 0)
         {
             playerRoles[clientId] = true;
             Debug.Log($"Jugador {clientId} asignado como ZOMBI (primer jugador)");
-            return false; // Retornamos false porque es Zombi (isHuman = false)
+            return false;
         }
-        //2
         else if (totalZombies < totalHumanos && totalZombies < maxZombies)
         {
             playerRoles[clientId] = true;
             Debug.Log($"Jugador {clientId} asignado como ZOMBI");
-            return false; // Retornamos false porque es Zombi (isHuman = false)
+            return false;
         }
-        //3
         else if (totalZombies > totalHumanos && totalHumanos < maxHumans)
         {
             playerRoles[clientId] = false;
             Debug.Log($"Jugador {clientId} asignado como HUMANO");
-            return true; // Retornamos false porque es Zombi (isHuman = false)
+            return true;
         }
-        //4
         else if (totalHumanos == totalZombies && totalZombies < maxZombies)
         {
             playerRoles[clientId] = true;
             Debug.Log($"Jugador {clientId} asignado como ZOMBI");
-            return false; // Retornamos false porque es Zombi (isHuman = false)
+            return false;
         }
-        //5
         else if (totalZombies >= maxZombies && totalHumanos >= maxHumans)
         {
-            Debug.Log($"ERROR: La sala esta llena, intentalo mas tarde :)");
-            //aqui habria que hacer que no se meta, pero de momento vamos a returnear false
+            Debug.Log($"ERROR: La sala está llena, intentalo más tarde :)");
             return false;
         }
 
-        //aqui habria que hacer que no se meta, pero de momento vamos a returnear false
         Debug.LogWarning("No se pudo asignar rol. Asignando como HUMANO por defecto.");
         playerRoles[clientId] = false;
         return true;

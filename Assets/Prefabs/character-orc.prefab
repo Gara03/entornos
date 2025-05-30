@@ -252,6 +252,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: character-orc
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 733de46ad15449742a994275e9659d92, type: 3}
+      propertyPath: m_TagString
+      value: Player
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
@@ -321,9 +325,9 @@ Rigidbody:
   m_ImplicitTensor: 1
   m_UseGravity: 1
   m_IsKinematic: 0
-  m_Interpolate: 0
-  m_Constraints: 0
-  m_CollisionDetection: 0
+  m_Interpolate: 1
+  m_Constraints: 80
+  m_CollisionDetection: 1
 --- !u!95 &5266923850224609321
 Animator:
   serializedVersion: 5
@@ -399,13 +403,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 312a90f3167a5de4ba1d0027d4f7fd8a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  controller: {fileID: 0}
+  rigidBody: {fileID: 0}
   virtualCameraObject: {fileID: 1389310354139391875}
+  mainCameraTransform: {fileID: 0}
   CoinsCollected: 0
   isZombie: 0
   uniqueID: 
-  moveSpeed: 5
-  _rotSpeed: 270
+  moveSpeed: 2
+  _rotSpeed: 150
   zombieSpeedModifier: 0.8
   animator: {fileID: 5266923850224609321}
 --- !u!114 &-5958015653143517070
@@ -530,12 +535,12 @@ MonoBehaviour:
   SyncPositionX: 1
   SyncPositionY: 1
   SyncPositionZ: 1
-  SyncRotAngleX: 1
+  SyncRotAngleX: 0
   SyncRotAngleY: 1
-  SyncRotAngleZ: 1
-  SyncScaleX: 1
-  SyncScaleY: 1
-  SyncScaleZ: 1
+  SyncRotAngleZ: 0
+  SyncScaleX: 0
+  SyncScaleY: 0
+  SyncScaleZ: 0
   PositionThreshold: 0.001
   RotAngleThreshold: 0.01
   ScaleThreshold: 0.01

@@ -4,170 +4,114 @@ using UnityEngine.InputSystem;
 using Unity.Netcode;
 using Cinemachine;
 
-//AYUDA: unique.Id no sirve de nada porque el network te lo da hecho, lo primero que seria es eliminar el botom de host que solo da amarguras, crear nodo servidor, y que todo los clienetes se conecten
-// luego puedes poner el boton de host otra vez y ya funcionaria bien, ghestionar conexiones y reconexiones sin cerrar servidor, 
-
-
-public class PlayerController : NetworkBehaviour  
+public class PlayerController : NetworkBehaviour
 {
-    [SerializeField] CharacterController controller;
-
+    [SerializeField] Rigidbody rigidBody;
     private TextMeshProUGUI coinText;
 
-    
     [Header("Cinemachine")]
-    public GameObject virtualCameraObject; // referencia al GameObject que tiene la virtual camera
+    public GameObject virtualCameraObject;
+    public Transform mainCameraTransform; // Añade esta referencia a la cámara principal
 
     [Header("Stats")]
     public int CoinsCollected = 0;
 
     [Header("Character settings")]
-    public bool isZombie = false; // Añadir una propiedad para el estado del jugador
-    public string uniqueID; // Añadir una propiedad para el identificador único
+    public bool isZombie = false;
+    public string uniqueID;
 
     [Header("Movement Settings")]
-    Vector2 _input;                         //cuando digas que va para delante va para delante sin tener que cambiar el codigo, x rotacion y translacion
-    
-    //el serializefield es para que se mantenga privado pero se oueda modificar desde el inspector, pero no se puede acceder desde otros scripts
-    [SerializeField] float moveSpeed = 1f;           // Velocidad de movimiento
-    [SerializeField] float _rotSpeed = 270f;           //velocidad rot
-    public float zombieSpeedModifier = 0.8f; // Modificador de velocidad para zombies
-    public Animator animator;              // Referencia al Animator
+    Vector2 _input;
 
-    Transform _playerTransform;             //para sacar el transform del player
+    [SerializeField] float moveSpeed = 5f;
+    [SerializeField] float _rotSpeed = 720f;   // Rotación más rápida para mejor sensación
+    public float zombieSpeedModifier = 0.8f;
 
-    private float horizontalInput;         // Entrada horizontal (A/D o flechas)
-    private float verticalInput;           // Entrada vertical (W/S o flechas)
+    public Animator animator;
+
+    private float horizontalInput;
+    private float verticalInput;
 
     private void Awake()
     {
-        _playerTransform = transform;       //para acceder al transform del gameobject facilmente, nos devuleve la transformada del objeto
+        if (rigidBody == null)
+            rigidBody = GetComponent<Rigidbody>();
+
+        if (mainCameraTransform == null && Camera.main != null)
+            mainCameraTransform = Camera.main.transform;  // asignar cámara principal si no está seteada
     }
 
     void Start()
     {
-        
-
-        Debug.Log($"[{OwnerClientId}] IsOwner: {IsOwner} - Activando cámara: {virtualCameraObject?.name}");
-
         if (IsOwner && virtualCameraObject != null)
-        {
             virtualCameraObject.SetActive(true);
-        }
 
-
-        // Buscar el objeto "CanvasPlayer" en la escena
         GameObject canvas = GameObject.Find("CanvasPlayer");
-
         if (canvas != null)
         {
-            Debug.Log("Canvas encontrado");
-
-            // Buscar el Panel dentro del CanvasHud
             Transform panel = canvas.transform.Find("PanelHud");
             if (panel != null)
             {
-                // Buscar el TextMeshProUGUI llamado "CoinsValue" dentro del Panel
                 Transform coinTextTransform = panel.Find("CoinsValue");
                 if (coinTextTransform != null)
-                {
                     coinText = coinTextTransform.GetComponent<TextMeshProUGUI>();
-                }
             }
         }
 
         UpdateCoinUI();
     }
 
-    void FixedUpdate()  //cuando utilizamos fisicas, fixed update pq quiere que las interpolaciones se hagan en tiempos constantes y da menos errores
+    void FixedUpdate()
     {
-
         if (!IsOwner) return;
 
-        //zombie movimiento
-        float currentSpeed = moveSpeed;
-        if (isZombie)
+        horizontalInput = _input.x;
+        verticalInput = _input.y;
+
+        float currentSpeed = isZombie ? zombieSpeedModifier * moveSpeed : moveSpeed;
+
+        Vector3 moveDirection = new Vector3(horizontalInput, 0, verticalInput).normalized;
+
+        if (moveDirection.magnitude >= 0.1f)
         {
-            currentSpeed = zombieSpeedModifier * moveSpeed;
+            // Movimiento local a world
+            Vector3 worldMove = transform.TransformDirection(moveDirection) * currentSpeed * Time.fixedDeltaTime;
+
+            // Mover Rigidbody con MovePosition para evitar conflictos con física
+            Vector3 targetPosition = rigidBody.position + worldMove;
+            rigidBody.MovePosition(targetPosition);
+
+            // Rotar hacia dirección movimiento usando MoveRotation para suavidad y sin vibrar
+            Quaternion targetRotation = Quaternion.LookRotation(worldMove);
+            Quaternion newRotation = Quaternion.RotateTowards(rigidBody.rotation, targetRotation, _rotSpeed * Time.fixedDeltaTime);
+            rigidBody.MoveRotation(newRotation);
+        }
+        else
+        {
+            // No mover horizontal, solo dejar que gravedad haga efecto (si Rigidbody.useGravity = true)
+            // No tocamos velocidad ni posición
         }
 
-
-        _playerTransform.Translate(Vector3.forward * (_input.y * currentSpeed * Time.fixedDeltaTime));     //movernos hacia adelante //ESTA ABAJO MODIFICAR
-        _playerTransform.Rotate(Vector3.up * (_input.x * _rotSpeed * Time.fixedDeltaTime));                //rotamos sobre y
-
- 
-
-        // Leer entrada del teclado
-        //horizontalInput = Input.GetAxis("Horizontal");
-        //verticalInput = Input.GetAxis("Vertical");
-
-        // Mover el jugador
-        //MovePlayer();
-        //PlayerMove();
-
-        // Manejar las animaciones del jugador
         HandleAnimations();
     }
 
-    public void OnMove(InputAction.CallbackContext contex)
-    {
-        _input = contex.ReadValue<Vector2>();       //cuando input se ejecute fixed update esta esperando un imput para moverse
 
-        //zombie
-        horizontalInput = _input.x;
-        verticalInput = _input.y;
+
+    public void OnMove(InputAction.CallbackContext context)
+    {
+        _input = context.ReadValue<Vector2>();
     }
-
-    /*void PlayerMove()
-    {
-        if (cameraTransform == null) { return; }
-
-        // Calcular la dirección de movimiento en relación a la cámara
-        Vector3 moveDirection = (cameraTransform.forward * verticalInput + cameraTransform.right * horizontalInput).normalized;
-        moveDirection.y = 0f; // Asegurarnos de que el movimiento es horizontal (sin componente Y)
-
-        _playerTransform.Translate(Vector3.forward * (_input.y * moveSpeed * Time.fixedDeltaTime));     //movernos hacia adelante //ESTA ABAJO MODIFICAR
-        _playerTransform.Translate(Vector3.left * (_input.y * moveSpeed * Time.fixedDeltaTime));
-
-
-        //_playerTransform.Rotate(Vector3.up * (_input.x * _rotSpeed * Time.fixedDeltaTime));             //rotamos sobre y
-
-
-    }*/
-    /*void MovePlayer()
-    {
-        if (cameraTransform == null) { return; }
-
-        // Calcular la dirección de movimiento en relación a la cámara
-        Vector3 moveDirection = (cameraTransform.forward * verticalInput + cameraTransform.right * horizontalInput).normalized;
-        moveDirection.y = 0f; // Asegurarnos de que el movimiento es horizontal (sin componente Y)
-
-        // Mover el jugador usando el Transform
-        if (moveDirection != Vector3.zero)
-        {
-            // Calcular la rotación en Y basada en la dirección del movimiento
-            Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
-            transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, 720f * Time.deltaTime);
-
-            // Ajustar la velocidad si es zombie
-            float adjustedSpeed = isZombie ? moveSpeed * zombieSpeedModifier : moveSpeed;
-
-            // Mover al jugador en la dirección deseada
-            transform.Translate(moveDirection * adjustedSpeed * Time.deltaTime, Space.World);
-        }
-    }*/
 
     void HandleAnimations()
     {
-        // Animaciones basadas en la dirección del movimiento
-        animator.SetFloat("Speed", Mathf.Abs(horizontalInput) + Mathf.Abs(verticalInput));  // Controla el movimiento (caminar/correr)
+        animator.SetFloat("Speed", Mathf.Abs(horizontalInput) + Mathf.Abs(verticalInput));
     }
 
     public void CoinCollected()
     {
-        if (!isZombie) // Solo los humanos pueden recoger monedas
+        if (!isZombie)
         {
-            this.CoinsCollected++;
+            CoinsCollected++;
             UpdateCoinUI();
         }
     }
@@ -175,9 +119,6 @@ public class PlayerController : NetworkBehaviour
     void UpdateCoinUI()
     {
         if (coinText != null)
-        {
             coinText.text = $"{CoinsCollected}";
-        }
     }
 }
-
