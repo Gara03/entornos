@@ -28,6 +28,7 @@ public class GameManager : NetworkBehaviour
     private List<Vector3> zombieSpawnPoints = new List<Vector3>();
     private float remainingSeconds;
 
+    private int seed;
     public LevelBuilder levelBuilder;
 
     private Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
@@ -52,16 +53,19 @@ public class GameManager : NetworkBehaviour
         {
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
             _NetworkManager.StartHost();
+            
+        }
+        if (GUILayout.Button("Client"))
+        {
+            _NetworkManager.StartClient();
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
-        if (GUILayout.Button("Client")) _NetworkManager.StartClient();
         if (GUILayout.Button("Server"))
         {
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
             _NetworkManager.StartServer();
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
+            
         }
     }
 
@@ -77,7 +81,6 @@ public class GameManager : NetworkBehaviour
         if (IsClient && !IsServer)
         {
             Debug.Log("[GameManager] Cliente (no host), solicitando construir el nivel.");
-            RequestBuildLevelServerRpc();
         }
 
         if (IsServer)
@@ -92,6 +95,7 @@ public class GameManager : NetworkBehaviour
     {
         if (IsServer)
         {
+            seed = Random.Range(int.MinValue, int.MaxValue);
             Debug.Log("[GameManager] OnNetworkSpawn() en servidor.");
             if (levelBuilder == null)
             {
@@ -99,11 +103,11 @@ public class GameManager : NetworkBehaviour
                 return;
             }
 
-            levelBuilder.Build();
+            levelBuilder.Build(seed);
             humanSpawnPoints = levelBuilder.GetHumanSpawnPoints();
             zombieSpawnPoints = levelBuilder.GetZombieSpawnPoints();
 
-            InformClientsToBuildLevelClientRpc();
+            InformClientsToBuildLevelClientRpc(seed);
         }
         else
         {
@@ -116,16 +120,16 @@ public class GameManager : NetworkBehaviour
     public void RequestBuildLevelServerRpc()
     {
         Debug.Log("Cliente ha solicitado construir el nivel.");
-        InformClientsToBuildLevelClientRpc();
+        InformClientsToBuildLevelClientRpc(seed);
     }
 
     [ClientRpc]
-    private void InformClientsToBuildLevelClientRpc()
+    private void InformClientsToBuildLevelClientRpc(int seed)
     {
         if (!IsServer && levelBuilder != null)
         {
-            Debug.Log("[GameManager] Cliente construyendo nivel.");
-            levelBuilder.Build();
+            Debug.Log("[GameManager] Cliente construyendo nivel con semilla:" + seed);
+            levelBuilder.Build(seed);
         }
     }
 

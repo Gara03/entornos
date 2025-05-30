@@ -1,23 +1,23 @@
-using System.Collections;
-using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 
-public class DetectPlayerCollision : MonoBehaviour
+public class DetectPlayerCollision : NetworkBehaviour
 {
-    [SerializeField] private AudioClip pickupSound; // Sonido al recoger la moneda
+    [SerializeField] private AudioClip pickupSound;
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.CompareTag("Player")) // Verifica si el jugador tocó la moneda
+        if (!IsServer) return; // Solo servidor maneja la lógica
+
+        if (other.CompareTag("Player"))
         {
             PlayerController player = other.GetComponent<PlayerController>();
-            if (player != null && !player.isZombie) // Verifica si el jugador no es un zombie
+            if (player != null && player.isZombie == false)
             {
                 player.CoinCollected();
                 AudioSource.PlayClipAtPoint(pickupSound, transform.position);
-                Destroy(gameObject); // Elimina la moneda de la escena
+                Destroy(gameObject);
             }
         }
     }
 }
-

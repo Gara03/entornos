@@ -1,11 +1,12 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using Unity.Netcode;
 
 /// <summary>
 /// Clase para generar el nivel del juego, incluyendo suelos, paredes, ítems decorativos, monedas y el borde exterior.
 /// </summary>
-public class LevelBuilder : MonoBehaviour
+public class LevelBuilder : NetworkBehaviour
 {
     #region Properties
 
@@ -57,6 +58,10 @@ public class LevelBuilder : MonoBehaviour
     private HashSet<Vector3> humanSpawnPoints = new HashSet<Vector3>();
     private HashSet<Vector3> zombieSpawnPoints = new HashSet<Vector3>();
 
+    private int seed = 0;
+    private System.Random prng;
+
+
     #endregion
 
     #region Unity game loop methods
@@ -71,10 +76,18 @@ public class LevelBuilder : MonoBehaviour
 
     #region World building methods
 
-    public void Build()
+    public void SetSeed(int seed)
     {
+        this.seed = seed;
+        prng = new System.Random(seed);
+    }
+
+    public void Build(int seed)
+    {
+        SetSeed(seed); // Crítico para sincronía
         CreateRooms(roomWidth, roomLength, numberOfRooms);
     }
+
 
     /// <summary>
     /// Crea una matriz de habitaciones y calcula los puntos de aparición.
@@ -139,7 +152,7 @@ public class LevelBuilder : MonoBehaviour
         {
             for (int z = 0; z < length; z++)
             {
-                int randomIndex = Random.Range(0, floorPrefabs.Length);
+                int randomIndex = prng.Next(floorPrefabs.Length);
                 GameObject selectedFloorPrefab = floorPrefabs[randomIndex];
 
                 Vector3 tilePosition = new Vector3(x * tileSize + offsetX, 0, z * tileSize + offsetZ);
@@ -260,7 +273,7 @@ public class LevelBuilder : MonoBehaviour
 
         if (totalCondition && ShouldPlaceItem())
         {
-            int randomIndex = Random.Range(0, obstaclesPrefabs.Length);
+            int randomIndex = prng.Next(obstaclesPrefabs.Length);
             GameObject obstaclePrefab = obstaclesPrefabs[randomIndex];
             obstaclePrefab.tag = "Obstacle";
             PlaceElement(obstaclePrefab, tilePosition.x, tilePosition.z, Quaternion.identity);
@@ -272,6 +285,9 @@ public class LevelBuilder : MonoBehaviour
     /// </summary>
     private void CreateCoin(int x, int z, int width, int length, Vector3 tilePosition)
     {
+        if (!NetworkManager.Singleton.IsServer)
+            return;  // Solo el servidor genera monedas
+
         bool widthBorderCondition = x > 0 && x < (width - 1);
         bool lengthBorderCondition = z > 0 && z < (length - 1);
 
@@ -286,18 +302,30 @@ public class LevelBuilder : MonoBehaviour
 
             if (!isPositionOccupied) // Si no hay obstáculos, colocar la moneda
             {
-                PlaceElement(coinPrefab, tilePosition.x, tilePosition.z, Quaternion.identity);
-                CoinsGenerated++;
+                GameObject coin = Instantiate(coinPrefab, tilePosition, Quaternion.identity, roomParent);
+
+                // Asegurar que coinPrefab tenga NetworkObject
+                NetworkObject netObj = coin.GetComponent<NetworkObject>();
+                if (netObj != null)
+                {
+                    netObj.Spawn();
+                    CoinsGenerated++;
+                }
+                else
+                {
+                    Debug.LogError("El prefab de moneda no tiene NetworkObject.");
+                }
             }
         }
     }
+
 
     /// <summary>
     /// Determina si se debe colocar un ítem decorativo basado en la densidad configurada.
     /// </summary>
     private bool ShouldPlaceItem()
     {
-        float randomValue = Random.Range(0, 100);
+        float randomValue = (float)(prng.NextDouble() * 100f);
         return randomValue < ítemsDensity;
     }
 
@@ -306,7 +334,7 @@ public class LevelBuilder : MonoBehaviour
     /// </summary>
     private bool ShouldPlaceCoin()
     {
-        float randomValue = Random.Range(0, 100);
+        float randomValue = (float)(prng.NextDouble() * 100f);
         return randomValue < coinsDensity;
     }
 
@@ -343,10 +371,6 @@ public class LevelBuilder : MonoBehaviour
 
     #endregion
 }
-
-
-
-
 
 
 
