@@ -3,6 +3,8 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using Unity.Netcode;
 using Cinemachine;
+using Unity.Collections;
+
 
 public class PlayerController : NetworkBehaviour
 {
@@ -11,15 +13,13 @@ public class PlayerController : NetworkBehaviour
 
     [Header("Cinemachine")]
     public GameObject virtualCameraObject;
-    public Transform mainCameraTransform; // Añade esta referencia a la cámara principal
+    public Transform mainCameraTransform;
 
     [Header("Stats")]
     public int CoinsCollected = 0;
 
     [Header("Character settings")]
     public bool isZombie = false;
-    //public NetworkVariable<bool> isZombie = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone);
-
     public string uniqueID;
 
     [Header("Movement Settings")]
@@ -27,7 +27,7 @@ public class PlayerController : NetworkBehaviour
     private NetworkVariable<float> netSpeed = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
     [SerializeField] float moveSpeed = 5f;
-    [SerializeField] float _rotSpeed = 720f;   // Rotación más rápida para mejor sensación
+    [SerializeField] float _rotSpeed = 720f;
     public float zombieSpeedModifier = 0.8f;
 
     public Animator animator;
@@ -35,13 +35,17 @@ public class PlayerController : NetworkBehaviour
     private float horizontalInput;
     private float verticalInput;
 
+    [SerializeField] private TextMeshPro nameText3D;
+    private NetworkVariable<FixedString32Bytes> playerName = new(writePerm: NetworkVariableWritePermission.Server);
+
+
     private void Awake()
     {
         if (rigidBody == null)
             rigidBody = GetComponent<Rigidbody>();
 
         if (mainCameraTransform == null && Camera.main != null)
-            mainCameraTransform = Camera.main.transform;  // asignar cámara principal si no está seteada
+            mainCameraTransform = Camera.main.transform;
     }
 
     void Start()
@@ -65,16 +69,45 @@ public class PlayerController : NetworkBehaviour
     {
         if (virtualCameraObject != null)
         {
-            // Solo activa su propia cámara si es el dueño local
             virtualCameraObject.SetActive(IsOwner);
         }
+
+        if (IsServer)
+        {
+            // Convertir el nombre (string) a FixedString32Bytes antes de asignar
+            playerName.Value = new FixedString32Bytes(GetNameByClientId(OwnerClientId));
+        }
+
+        // Escuchar cambios y actualizar visualmente el texto
+        playerName.OnValueChanged += OnNameChanged;
+        OnNameChanged(new FixedString32Bytes(""), playerName.Value); // Llama con FixedString también aquí
     }
+
+
+    private string GetNameByClientId(ulong clientId)
+    {
+        return clientId switch
+        {
+            0 => "Alberto",
+            1 => "Laura",
+            2 => "Ángela",
+            3 => "Gara",
+            _ => $"Jugador{clientId}"
+        };
+    }
+
+    private void OnNameChanged(FixedString32Bytes oldName, FixedString32Bytes newName)
+    {
+        if (nameText3D != null)
+            nameText3D.text = newName.ToString();
+    }
+
 
     void Update()
     {
         if (!IsOwner)
         {
-            animator.SetFloat("Speed", netSpeed.Value); // Mostrar animación de otros jugadores
+            animator.SetFloat("Speed", netSpeed.Value);
         }
     }
 
@@ -91,28 +124,18 @@ public class PlayerController : NetworkBehaviour
 
         if (moveDirection.magnitude >= 0.1f)
         {
-            // Movimiento local a world
             Vector3 worldMove = transform.TransformDirection(moveDirection) * currentSpeed * Time.fixedDeltaTime;
 
-            // Mover Rigidbody con MovePosition para evitar conflictos con física
             Vector3 targetPosition = rigidBody.position + worldMove;
             rigidBody.MovePosition(targetPosition);
 
-            // Rotar hacia dirección movimiento usando MoveRotation para suavidad y sin vibrar
             Quaternion targetRotation = Quaternion.LookRotation(worldMove);
             Quaternion newRotation = Quaternion.RotateTowards(rigidBody.rotation, targetRotation, _rotSpeed * Time.fixedDeltaTime);
             rigidBody.MoveRotation(newRotation);
         }
-        else
-        {
-            // No mover horizontal, solo dejar que gravedad haga efecto (si Rigidbody.useGravity = true)
-            // No tocamos velocidad ni posición
-        }
 
         HandleAnimations();
     }
-
-
 
     public void OnMove(InputAction.CallbackContext context)
     {
@@ -124,7 +147,7 @@ public class PlayerController : NetworkBehaviour
         float speedValue = Mathf.Abs(horizontalInput) + Mathf.Abs(verticalInput);
         netSpeed.Value = speedValue;
 
-        animator.SetFloat("Speed", Mathf.Abs(horizontalInput) + Mathf.Abs(verticalInput));
+        animator.SetFloat("Speed", speedValue);
     }
 
     public void CoinCollected()
@@ -135,7 +158,6 @@ public class PlayerController : NetworkBehaviour
             UpdateCoinUI();
         }
     }
-
 
     void UpdateCoinUI()
     {
