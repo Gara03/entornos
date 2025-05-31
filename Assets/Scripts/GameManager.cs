@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.UI;
 
 public enum GameMode
 {
@@ -23,6 +24,11 @@ public class GameManager : NetworkBehaviour
 
     [SerializeField] GameObject StartPanel;
 
+    [SerializeField] GameObject ModeSelect;
+
+    [SerializeField] Toggle T_Moneda;
+    [SerializeField] Toggle T_Tiempo;
+
     private bool jugador1ready = false;
     private bool jugador2ready = false;
     private bool jugador3ready = false;
@@ -31,7 +37,7 @@ public class GameManager : NetworkBehaviour
     private bool partidalista = false;
 
     [Header("Game Mode Settings")]
-    [SerializeField] private GameMode gameMode;
+    [SerializeField] public GameMode gameMode;
     [SerializeField] private int minutes = 5;
 
     [SerializeField] private GameObject coinManagerPrefab;
@@ -119,6 +125,25 @@ public class GameManager : NetworkBehaviour
                 StartPanel.SetActive(false);
             }
         }
+        if (IsServer)
+        {
+            if (T_Moneda.isOn)
+            {
+                gameMode = GameMode.Monedas;
+                TellModeClientRpc(gameMode);
+            }
+            if (T_Tiempo.isOn)
+            {
+                gameMode = GameMode.Tiempo;
+                TellModeClientRpc(gameMode);
+            }
+        }
+    }
+
+    [ClientRpc]
+    private void TellModeClientRpc(GameMode gameMode_)
+    {
+        gameMode = gameMode_;
     }
 
     public override void OnNetworkSpawn()
@@ -147,10 +172,13 @@ public class GameManager : NetworkBehaviour
 
                 Debug.Log($"[GameManager] CoinManager instanciado y spawneado: {netObj.NetworkObjectId}");
             }
+
+            ModeSelect.SetActive(true);
         }
         else
         {
             Debug.Log("[GameManager] OnNetworkSpawn() en cliente.");
+            ModeSelect.SetActive(false);
             RequestBuildLevelServerRpc();
         }
 
