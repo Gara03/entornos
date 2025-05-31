@@ -407,7 +407,7 @@ MonoBehaviour:
   virtualCameraObject: {fileID: 1389310354139391875}
   mainCameraTransform: {fileID: 0}
   CoinsCollected: 0
-  isZombie: 0
+  isZombie: 1
   uniqueID: 
   moveSpeed: 5
   _rotSpeed: 270

@@ -52,7 +52,7 @@ public class GameManager : NetworkBehaviour
     private int seed;
     public LevelBuilder levelBuilder;
 
-    private Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
+    public static Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
 
     void OnGUI()
     {
@@ -73,7 +73,9 @@ public class GameManager : NetworkBehaviour
         if (GUILayout.Button("Host"))
         {
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
+            NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnected;
             _NetworkManager.StartHost();
+
             
         }
         if (GUILayout.Button("Client"))
@@ -85,6 +87,7 @@ public class GameManager : NetworkBehaviour
         if (GUILayout.Button("Server"))
         {
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
+            NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnected;
             _NetworkManager.StartServer();
             
         }
@@ -241,6 +244,22 @@ public class GameManager : NetworkBehaviour
 
         Debug.Log($"[GameManager] Jugador {clientId} {(isHuman ? "Humano" : "Zombi")} instanciado en {spawnPosition}");
     }
+
+    private void HandleClientDisconnected(ulong clientId)
+    {
+        Debug.Log($"[GameManager] Cliente desconectado: {clientId}");
+
+        // Elimina al jugador del diccionario de roles
+        if (playerRoles.ContainsKey(clientId))
+        {
+            playerRoles.Remove(clientId);
+            Debug.Log($"[GameManager] Rol eliminado para cliente {clientId}");
+        }
+
+        // Opcional: Forzar un refresco inmediato del contador
+        UIManager.Instance?.ForceRefreshCounts();
+    }
+
 
     [ServerRpc(RequireOwnership = false)]
     public void PlayerReadyServerRpc(ulong clientId)

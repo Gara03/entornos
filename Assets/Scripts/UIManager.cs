@@ -88,10 +88,44 @@ public class UIManager : NetworkBehaviour
         int humanCount = 0;
         int zombieCount = 0;
 
+        foreach (var entry in GameManager.playerRoles)
+        {
+            if (entry.Value)
+                zombieCount++;
+            else
+                humanCount++;
+        }
+
+        //foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+        //{
+        //    if (client.PlayerObject == null)
+        //        continue; // Evita el error si aún no tiene PlayerObject
+
+        //    var player = client.PlayerObject.GetComponent<PlayerController>();
+        //    if (player != null)
+        //    {
+        //        if (player.isZombie)
+        //            zombieCount++;
+        //        else
+        //            humanCount++;
+        //    }
+        //}
+
+        humansNum.Value = humanCount;
+        zombiesNum.Value = zombieCount;
+    }
+
+    public void ForceRefreshCounts()
+    {
+        if (!IsServer) return;
+
+        int humanCount = 0;
+        int zombieCount = 0;
+
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
             if (client.PlayerObject == null)
-                continue; // Evita el error si aún no tiene PlayerObject
+                continue;
 
             var player = client.PlayerObject.GetComponent<PlayerController>();
             if (player != null)
@@ -105,6 +139,8 @@ public class UIManager : NetworkBehaviour
 
         humansNum.Value = humanCount;
         zombiesNum.Value = zombieCount;
+
+        Debug.Log($"[UIManager] Conteo forzado: Humanos={humanCount}, Zombis={zombieCount}");
     }
 
     private IEnumerator WaitForCoinManager()

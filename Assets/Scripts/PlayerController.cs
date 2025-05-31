@@ -46,9 +46,6 @@ public class PlayerController : NetworkBehaviour
 
     void Start()
     {
-        if (IsOwner && virtualCameraObject != null)
-            virtualCameraObject.SetActive(true);
-
         GameObject canvas = GameObject.Find("CanvasPlayer");
         if (canvas != null)
         {
@@ -64,6 +61,14 @@ public class PlayerController : NetworkBehaviour
         UpdateCoinUI();
     }
 
+    public override void OnNetworkSpawn()
+    {
+        if (virtualCameraObject != null)
+        {
+            // Solo activa su propia cámara si es el dueño local
+            virtualCameraObject.SetActive(IsOwner);
+        }
+    }
 
     void Update()
     {
