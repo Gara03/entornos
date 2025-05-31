@@ -90,6 +90,9 @@ public class UIManager : NetworkBehaviour
 
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
+            if (client.PlayerObject == null)
+                continue; // Evita el error si aún no tiene PlayerObject
+
             var player = client.PlayerObject.GetComponent<PlayerController>();
             if (player != null)
             {
@@ -132,6 +135,6 @@ public class UIManager : NetworkBehaviour
     private void OnGlobalCoinsChanged(int previous, int current)
     {
         if (globalCoinText != null)
-            globalCoinText.text = current.ToString();
+            globalCoinText.text = (current-5).ToString();
     }
 }
