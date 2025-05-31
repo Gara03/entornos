@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public enum GameMode
@@ -13,6 +14,8 @@ public enum GameMode
 public class GameManager : NetworkBehaviour
 {
     [SerializeField] NetworkManager _NetworkManager;
+
+    [SerializeField] CoinManager coinManager;
 
     [Header("Prefabs")]
     [SerializeField] GameObject playerPrefab;
@@ -117,7 +120,7 @@ public class GameManager : NetworkBehaviour
 
     private void Update()
     {
-        if(jugador1ready && jugador2ready && jugador3ready && jugador4ready)
+        if (jugador1ready && jugador2ready && jugador3ready && jugador4ready)
         {
             partidalista = true;
             partidalistaClientRpc();
@@ -143,6 +146,32 @@ public class GameManager : NetworkBehaviour
                 TellModeClientRpc(gameMode);
             }
         }
+        var coinManager = GetCoinManagerInstance();
+        if (coinManager != null && coinManager.globalCoins.Value >= 25)
+        {
+            Debug.Log($"FINDE JUEGOOOOOOOOOOOOOO");
+            FinHumanosClientRpc();
+
+        }
+    }
+
+
+    [ClientRpc]
+    public void FinHumanosClientRpc()
+    {
+        SceneManager.LoadScene("HumansWin");
+    }
+    [ClientRpc]
+    public void FinZombiesClientRpc()
+    {
+        SceneManager.LoadScene("ZobiesWin");
+    }
+    private CoinManager GetCoinManagerInstance()
+    {
+        if (CoinManager.instance != null)
+            return CoinManager.instance;
+
+        return FindObjectOfType<CoinManager>();
     }
 
     [ClientRpc]
