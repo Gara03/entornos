@@ -162,9 +162,7 @@ public class LevelBuilder : NetworkBehaviour
                 tile.name = $"Tile_{x}_{z}";
 
                 CreateDecorativeItem(x, z, width, length, tilePosition);
-                if (gameManager.gameMode == GameMode.Monedas) { 
-                    CreateCoin(x, z, width, length, tilePosition);
-                }
+                CreateCoin(x, z, width, length, tilePosition);
             }
         }
 

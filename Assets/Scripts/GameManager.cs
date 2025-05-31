@@ -29,6 +29,8 @@ public class GameManager : NetworkBehaviour
     [SerializeField] Toggle T_Moneda;
     [SerializeField] Toggle T_Tiempo;
 
+    private GameObject[] Coins;
+
     private bool jugador1ready = false;
     private bool jugador2ready = false;
     private bool jugador3ready = false;
@@ -188,6 +190,14 @@ public class GameManager : NetworkBehaviour
     private void partidalistaClientRpc()
     {
         partidalista = true;
+        Coins = GameObject.FindGameObjectsWithTag("Moneda");
+        if (gameMode == GameMode.Tiempo)
+        {
+            for (int i = 0; i < Coins.Length; i++) 
+            {
+                Coins[i].SetActive(false);
+            }
+        }
     }
 
     [ServerRpc(RequireOwnership = false)]
