@@ -7,8 +7,6 @@ public class DetectPlayerCollision : NetworkBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        UIManager.Instance?.AddGlobalCoinServerRpc();
-
         if (!IsServer) return;
 
         if (other.CompareTag("Player"))
@@ -16,16 +14,24 @@ public class DetectPlayerCollision : NetworkBehaviour
             PlayerController player = other.GetComponent<PlayerController>();
             if (player != null && !player.isZombie)
             {
-                player.CoinCollected(); // Actualiza solo el UI local
+                // Moneda personal
+                player.CoinCollected();
 
-                // Incrementa contador global
-                UIManager uiManager = FindObjectOfType<UIManager>();
-                if (uiManager != null)
+
+                if (CoinManager.instance != null)
                 {
-                    uiManager.AddGlobalCoinServerRpc(); // llama al servidor para que aumente la moneda global
+                    Debug.Log("[DetectPlayerCollision] CoinManager encontrado. Llamando a AddCoinServerRpc()");
+                    CoinManager.instance.AddCoinServerRpc();
+                }
+                else
+                {
+                    Debug.LogWarning("[DetectPlayerCollision] CoinManager.instance es NULL en servidor.");
                 }
 
+                // Sonido
                 AudioSource.PlayClipAtPoint(pickupSound, transform.position);
+
+                // Destruir moneda
                 Destroy(gameObject);
             }
         }

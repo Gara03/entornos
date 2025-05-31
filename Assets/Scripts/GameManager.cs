@@ -25,6 +25,8 @@ public class GameManager : NetworkBehaviour
     [SerializeField] private GameMode gameMode;
     [SerializeField] private int minutes = 5;
 
+    [SerializeField] private GameObject coinManagerPrefab;
+
     private List<Vector3> humanSpawnPoints = new List<Vector3>();
     private List<Vector3> zombieSpawnPoints = new List<Vector3>();
     private float remainingSeconds;
@@ -110,12 +112,22 @@ public class GameManager : NetworkBehaviour
             zombieSpawnPoints = levelBuilder.GetZombieSpawnPoints();
 
             InformClientsToBuildLevelClientRpc(seed);
+
+            if (coinManagerPrefab != null)
+            {
+                GameObject coinObj = Instantiate(coinManagerPrefab);
+                NetworkObject netObj = coinObj.GetComponent<NetworkObject>();
+                netObj.Spawn();
+
+                Debug.Log($"[GameManager] CoinManager instanciado y spawneado: {netObj.NetworkObjectId}");
+            }
         }
         else
         {
             Debug.Log("[GameManager] OnNetworkSpawn() en cliente.");
             RequestBuildLevelServerRpc();
         }
+
     }
 
     [ServerRpc(RequireOwnership = false)]

@@ -1057,6 +1057,7 @@ MonoBehaviour:
   maxZombies: 2
   gameMode: 0
   minutes: 5
+  coinManagerPrefab: {fileID: 7591928998519406820, guid: 9d98dcf859581a744bb7664bb6916548, type: 3}
   levelBuilder: {fileID: 712120465}
 --- !u!4 &712120463
 Transform:
