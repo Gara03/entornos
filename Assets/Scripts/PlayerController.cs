@@ -24,6 +24,7 @@ public class PlayerController : NetworkBehaviour
 
     [Header("Movement Settings")]
     Vector2 _input;
+    private NetworkVariable<float> netSpeed = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
     [SerializeField] float moveSpeed = 5f;
     [SerializeField] float _rotSpeed = 720f;   // Rotación más rápida para mejor sensación
@@ -43,8 +44,6 @@ public class PlayerController : NetworkBehaviour
             mainCameraTransform = Camera.main.transform;  // asignar cámara principal si no está seteada
     }
 
-
-
     void Start()
     {
         if (IsOwner && virtualCameraObject != null)
@@ -63,6 +62,15 @@ public class PlayerController : NetworkBehaviour
         }
 
         UpdateCoinUI();
+    }
+
+
+    void Update()
+    {
+        if (!IsOwner)
+        {
+            animator.SetFloat("Speed", netSpeed.Value); // Mostrar animación de otros jugadores
+        }
     }
 
     void FixedUpdate()
@@ -108,6 +116,9 @@ public class PlayerController : NetworkBehaviour
 
     void HandleAnimations()
     {
+        float speedValue = Mathf.Abs(horizontalInput) + Mathf.Abs(verticalInput);
+        netSpeed.Value = speedValue;
+
         animator.SetFloat("Speed", Mathf.Abs(horizontalInput) + Mathf.Abs(verticalInput));
     }
 
