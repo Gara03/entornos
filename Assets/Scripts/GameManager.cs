@@ -21,6 +21,15 @@ public class GameManager : NetworkBehaviour
     [SerializeField] private int maxHumans = 2;
     [SerializeField] private int maxZombies = 2;
 
+    [SerializeField] GameObject StartPanel;
+
+    private bool jugador1ready = false;
+    private bool jugador2ready = false;
+    private bool jugador3ready = false;
+    private bool jugador4ready = false;
+
+    private bool partidalista = false;
+
     [Header("Game Mode Settings")]
     [SerializeField] private GameMode gameMode;
     [SerializeField] private int minutes = 5;
@@ -95,6 +104,23 @@ public class GameManager : NetworkBehaviour
         remainingSeconds = minutes * 60;
     }
 
+    private void Update()
+    {
+        if(jugador1ready && jugador2ready && jugador3ready && jugador4ready)
+        {
+            partidalista = true;
+            partidalistaClientRpc();
+        }
+
+        if (partidalista)
+        {
+            if (StartPanel.activeSelf)
+            {
+                StartPanel.SetActive(false);
+            }
+        }
+    }
+
     public override void OnNetworkSpawn()
     {
         if (IsServer)
@@ -128,6 +154,12 @@ public class GameManager : NetworkBehaviour
             RequestBuildLevelServerRpc();
         }
 
+    }
+
+    [ClientRpc]
+    private void partidalistaClientRpc()
+    {
+        partidalista = true;
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -170,6 +202,32 @@ public class GameManager : NetworkBehaviour
         }
 
         Debug.Log($"[GameManager] Jugador {clientId} {(isHuman ? "Humano" : "Zombi")} instanciado en {spawnPosition}");
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void PlayerReadyServerRpc(ulong clientId)
+    {
+        switch (clientId)
+        {
+            case 0:
+                jugador1ready = true;
+                break;
+            case 1:
+                jugador2ready = true;
+                break;
+            case 2:
+                jugador3ready = true;
+                break;
+            case 3:
+                jugador4ready = true;
+                break;
+        }
+    }
+
+    public void AvisarServerJugadorListo_out()
+    {
+        ulong clientId = NetworkManager.Singleton.LocalClientId;
+        PlayerReadyServerRpc(clientId);
     }
 
     private bool AsignarRol(ulong clientId)
