@@ -65,6 +65,8 @@ public class GameManager : NetworkBehaviour
     public static Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
 
     [SerializeField] private EndGamePanelController endGamePanel;
+    [SerializeField] private GameObject ErrorPanel;
+
 
     void OnGUI()
     {
@@ -159,6 +161,11 @@ public class GameManager : NetworkBehaviour
         }
         if (IsServer)
         {
+            if (NetworkManager.Singleton.ConnectedClients.Count < 2 && partidalista)
+            {
+                ShowErrorPanelClientRpc();
+            }
+
             if (T_Moneda.isOn)
             {
                 gameMode = GameMode.Monedas;
@@ -186,6 +193,23 @@ public class GameManager : NetworkBehaviour
                     EndGame("Human", "Tiempo");
                 }
             }
+            // Comprobamos si quedan humanos vivos
+            int humanosVivos = 0;
+
+            foreach (var kvp in playerRoles)
+            {
+                if (!kvp.Value) // false significa que es humano
+                {
+                    humanosVivos++;
+                }
+            }
+
+            if (humanosVivos == 0 && partidalista)
+            {
+                Debug.Log("[GameManager] No quedan humanos vivos, fin de partida. Ganan los zombis.");
+                tellClientEndGameClientRpc();
+            }
+
         }
         var coinManager = GetCoinManagerInstance();
         if (coinManager != null && coinManager.globalCoins.Value >= 10)
@@ -250,10 +274,28 @@ public class GameManager : NetworkBehaviour
                 ? "¡Ganaste! Los zombis habéis atrapado a todos los humanos."
                 : "Has perdido... los zombis os han atrapado a todos.";
         }
+        else if (winnerTeam == "Zombie" && gameMode == "DaIgual")
+        {
+            resultMessage = isZombie
+                ? "¡Ganaste! Los zombis habéis atrapado a todos los humanos."
+                : "Has perdido... los zombis os han atrapado a todos.";
+        }
 
         endGamePanel.ShowEndGamePanel(resultMessage);
     }
-
+    [ClientRpc]
+    public void tellClientEndGameClientRpc()
+    {
+        EndGame("Zombie", "DaIgual");
+    }
+    [ClientRpc]
+    private void ShowErrorPanelClientRpc()
+    {
+        if (ErrorPanel != null)
+        {
+            ErrorPanel.SetActive(true);
+        }
+    }
 
 
     [ClientRpc]
