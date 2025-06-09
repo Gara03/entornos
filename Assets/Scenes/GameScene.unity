@@ -536,7 +536,7 @@ GameObject:
   - component: {fileID: 62336523}
   - component: {fileID: 62336522}
   m_Layer: 5
-  m_Name: GameModeConditionValue
+  m_Name: TimerText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -2023,6 +2023,7 @@ MonoBehaviour:
   ModeSelect: {fileID: 1889906219}
   T_Moneda: {fileID: 1683663148}
   T_Tiempo: {fileID: 2085442965}
+  matchDuration: 120
   gameMode: 0
   minutes: 5
   coinManagerPrefab: {fileID: 7591928998519406820, guid: 9d98dcf859581a744bb7664bb6916548, type: 3}
@@ -3501,6 +3502,7 @@ MonoBehaviour:
   humanCountText: {fileID: 710827814}
   zombieCountText: {fileID: 1726941680}
   globalCoinText: {fileID: 634567574}
+  timerText: {fileID: 62336522}
 --- !u!1 &1396801631
 GameObject:
   m_ObjectHideFlags: 0

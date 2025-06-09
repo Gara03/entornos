@@ -14,6 +14,8 @@ public class UIManager : NetworkBehaviour
     [SerializeField] private TextMeshProUGUI humanCountText;
     [SerializeField] private TextMeshProUGUI zombieCountText;
     [SerializeField] private TextMeshProUGUI globalCoinText;
+    //contador
+    [SerializeField] private TextMeshProUGUI timerText;
 
     private NetworkVariable<int> humansNum = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone);
     private NetworkVariable<int> zombiesNum = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone);
@@ -31,6 +33,7 @@ public class UIManager : NetworkBehaviour
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
+        StartCoroutine(WaitForGameManager());//contador
 
         if (globalCoinText == null)
         {
@@ -40,6 +43,17 @@ public class UIManager : NetworkBehaviour
                 Transform panel = canvas.transform.Find("PanelHud");
                 if (panel != null)
                 {
+                    //contador
+                    Transform timerTextTransform = panel.Find("TimerText");
+                    if (timerTextTransform != null)
+                    {
+                        timerText = timerTextTransform.GetComponent<TextMeshProUGUI>();
+                        Debug.Log("[UIManager] timerText asignado dinámicamente.");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[UIManager] No se encontró TimerText.");
+                    }
                     Transform coinTextTransform = panel.Find("CoinsValue");
                     if (coinTextTransform != null)
                     {
@@ -68,11 +82,21 @@ public class UIManager : NetworkBehaviour
         Debug.Log("[UIManager] el canvas es:"+FindObjectOfType<UIManager>());
 
     }
-
+    //contador
+    private void OnTimeChanged(float oldTime, float newTime)
+    {
+        UpdateTimerDisplay(newTime);
+    }
 
     public override void OnNetworkDespawn()
     {
         base.OnNetworkDespawn();
+        //contador
+        GameManager gm = FindObjectOfType<GameManager>();
+        if (gm != null)
+        {
+            gm.GetSyncedTime().OnValueChanged -= OnTimeChanged;
+        }
 
     }
 
@@ -157,5 +181,39 @@ public class UIManager : NetworkBehaviour
     {
         if (globalCoinText != null)
             globalCoinText.text = (current-5).ToString();
+    }
+
+    //contador
+    public void UpdateTimerDisplay(float time)
+    {
+        int minutes = Mathf.FloorToInt(time / 60f);
+        int seconds = Mathf.FloorToInt(time % 60f);
+        timerText.text = $"{minutes:00}:{seconds:00}";
+    }
+
+    //contador
+    private IEnumerator WaitForGameManager()
+    {
+        float timeout = 5f;
+        float elapsed = 0f;
+
+        GameManager gm = null;
+        while (gm == null && elapsed < timeout)
+        {
+            gm = FindObjectOfType<GameManager>();
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        if (gm != null)
+        {
+            gm.GetSyncedTime().OnValueChanged += OnTimeChanged;
+            UpdateTimerDisplay(gm.GetSyncedTime().Value); // sincronizar con el valor actual
+            Debug.Log("[UIManager] Suscripción al temporizador exitosa.");
+        }
+        else
+        {
+            Debug.LogWarning("[UIManager] No se encontró GameManager a tiempo.");
+        }
     }
 }

@@ -34,6 +34,12 @@ public class GameManager : NetworkBehaviour
 
     private GameObject[] Coins;
 
+    //contador
+    [SerializeField] private float matchDuration = 30f; // Duración total de la partida en segundos
+    private float timeRemaining;
+    private bool timerRunning = false;
+    private NetworkVariable<float> syncedTime = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private bool timerInitialized = false;
 
     private bool jugador1ready = false;
     private bool jugador2ready = false;
@@ -116,6 +122,13 @@ public class GameManager : NetworkBehaviour
         if (IsServer)
         {
             Debug.Log("[GameManager] Start() en servidor.");
+            //contador
+            if (partidalista && !timerRunning && gameMode == GameMode.Tiempo)
+            {
+                timeRemaining = matchDuration;
+                timerRunning = true;
+            }
+            timeRemaining = matchDuration;  //contador
         }
 
         remainingSeconds = minutes * 60;
@@ -129,11 +142,19 @@ public class GameManager : NetworkBehaviour
             partidalistaClientRpc();
         }
 
-        if (partidalista)
+        //contador
+        if (partidalista && !timerInitialized)
         {
             if (StartPanel.activeSelf)
             {
                 StartPanel.SetActive(false);
+            }
+
+            if (gameMode == GameMode.Tiempo)
+            {
+                timeRemaining = matchDuration;
+                timerRunning = true;
+                timerInitialized = true;
             }
         }
         if (IsServer)
@@ -148,29 +169,82 @@ public class GameManager : NetworkBehaviour
                 gameMode = GameMode.Tiempo;
                 TellModeClientRpc(gameMode);
             }
+            //contador
+            if (timerRunning && gameMode == GameMode.Tiempo)
+            {
+                timeRemaining -= Time.deltaTime;
+
+                if (timeRemaining < 0f) timeRemaining = 0f;
+
+                syncedTime.Value = timeRemaining; // esto sincroniza a los clientes
+                Debug.Log("[GameManager] Temporizador corriendo: " + timeRemaining);
+
+                if (timeRemaining <= 0f)
+                {
+                    timerRunning = false;
+                    Debug.Log("[GameManager] Tiempo agotado, ganan los humanos!");
+                    EndGame("Human", "Tiempo");
+                }
+            }
         }
         var coinManager = GetCoinManagerInstance();
         if (coinManager != null && coinManager.globalCoins.Value >= 10)
         {
-            EndGame("Human");
+            EndGame("Human", "Monedas");
 
         }
+        //contador
+        if (!IsServer && timerRunning && gameMode == GameMode.Tiempo)
+        {
+            timeRemaining -= Time.deltaTime;
+            syncedTime.Value = timeRemaining;
+            UIManager.Instance?.UpdateTimerDisplay(timeRemaining);
+
+            Debug.Log("[GameManager] Temporizador corriendo: " + timeRemaining);
+
+            UIManager.Instance?.UpdateTimerDisplay(timeRemaining);
+
+            if (timeRemaining <= 0f)
+            {
+                timeRemaining = 0f;
+                timerRunning = false;
+                Debug.Log("[GameManager] Tiempo agotado, ganan los humanos!");
+                EndGame("Human","Tiempo");
+            }
+        }
+    }
+    //contador
+    public NetworkVariable<float> GetSyncedTime()
+    {
+        return syncedTime;
     }
 
-    public void EndGame(string winnerTeam)
+    public void EndGame(string winnerTeam, string gameMode)
     {
         ulong localId = NetworkManager.Singleton.LocalClientId;
 
         bool isZombie = GameManager.playerRoles.ContainsKey(localId) && GameManager.playerRoles[localId];
         string resultMessage = "";
 
-        if (winnerTeam == "Human")
+        if (winnerTeam == "Human" && gameMode == "Monedas")
         {
             resultMessage = isZombie
                 ? "Has perdido... los humanos han recolectado todas las monedas."
                 : "¡Ganaste! Los humanos habéis recolectado todas las monedas.";
         }
-        else if (winnerTeam == "Zombie")
+        else if (winnerTeam == "Zombie" && gameMode == "Monedas")
+        {
+            resultMessage = isZombie
+                ? "¡Ganaste! Los zombis habéis atrapado a todos los humanos."
+                : "Has perdido... los zombis os han atrapado a todos.";
+        }
+        else if (winnerTeam == "Human" && gameMode == "Tiempo")
+        {
+            resultMessage = isZombie
+                ? "Has perdido... se te ha acabado el tiempo y los humanos han sobrevivido."
+                : "¡Ganaste! Los humanos habéis sobrevivido.";
+        }
+        else if (winnerTeam == "Zombie" && gameMode == "Tiempo")
         {
             resultMessage = isZombie
                 ? "¡Ganaste! Los zombis habéis atrapado a todos los humanos."

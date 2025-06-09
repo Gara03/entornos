@@ -8,7 +8,7 @@ public class CoinManager : NetworkBehaviour
     public static CoinManager instance;
 
 
-    public NetworkVariable<int> globalCoins = new NetworkVariable<int>(5, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    public NetworkVariable<int> globalCoins = new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
 
     private void Awake()
