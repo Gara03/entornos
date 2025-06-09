@@ -10,6 +10,23 @@ public class CoinManager : NetworkBehaviour
 
     public NetworkVariable<int> globalCoins = new NetworkVariable<int>(5, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+
+    private void Awake()
+    {
+        if (instance == null)
+        {
+            instance = this;
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+
+    }
+    private void Start()
+    {
+        AddCoinServerRpc();
+    }
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
@@ -28,6 +45,13 @@ public class CoinManager : NetworkBehaviour
     public void AddCoinServerRpc()
     {
         globalCoins.Value++;
+        Debug.Log($"[CoinManager] AddCoinServerRpc llamado. Nuevo valor: {globalCoins.Value}");
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void ResetCoinServerRpc()
+    {
+        globalCoins.Value = 0;
         Debug.Log($"[CoinManager] AddCoinServerRpc llamado. Nuevo valor: {globalCoins.Value}");
     }
 

@@ -34,6 +34,7 @@ public class GameManager : NetworkBehaviour
 
     private GameObject[] Coins;
 
+
     private bool jugador1ready = false;
     private bool jugador2ready = false;
     private bool jugador3ready = false;
@@ -56,6 +57,8 @@ public class GameManager : NetworkBehaviour
     public LevelBuilder levelBuilder;
 
     public static Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
+
+    [SerializeField] private EndGamePanelController endGamePanel;
 
     void OnGUI()
     {
@@ -147,13 +150,36 @@ public class GameManager : NetworkBehaviour
             }
         }
         var coinManager = GetCoinManagerInstance();
-        if (coinManager != null && coinManager.globalCoins.Value >= 25)
+        if (coinManager != null && coinManager.globalCoins.Value >= 10)
         {
-            Debug.Log($"FINDE JUEGOOOOOOOOOOOOOO");
-            FinHumanosClientRpc();
+            EndGame("Human");
 
         }
     }
+
+    public void EndGame(string winnerTeam)
+    {
+        ulong localId = NetworkManager.Singleton.LocalClientId;
+
+        bool isZombie = GameManager.playerRoles.ContainsKey(localId) && GameManager.playerRoles[localId];
+        string resultMessage = "";
+
+        if (winnerTeam == "Human")
+        {
+            resultMessage = isZombie
+                ? "Has perdido... los humanos han recolectado todas las monedas."
+                : "¡Ganaste! Los humanos habéis recolectado todas las monedas.";
+        }
+        else if (winnerTeam == "Zombie")
+        {
+            resultMessage = isZombie
+                ? "¡Ganaste! Los zombis habéis atrapado a todos los humanos."
+                : "Has perdido... los zombis os han atrapado a todos.";
+        }
+
+        endGamePanel.ShowEndGamePanel(resultMessage);
+    }
+
 
 
     [ClientRpc]
@@ -285,7 +311,6 @@ public class GameManager : NetworkBehaviour
             Debug.Log($"[GameManager] Rol eliminado para cliente {clientId}");
         }
 
-        // Opcional: Forzar un refresco inmediato del contador
         UIManager.Instance?.ForceRefreshCounts();
     }
 
@@ -327,7 +352,6 @@ public class GameManager : NetworkBehaviour
             else totalHumanos++;
         }
 
-        // Lógica original tuya, respetada al 100%
         if (totalZombies == 0 && totalHumanos == 0)
         {
             playerRoles[clientId] = true;

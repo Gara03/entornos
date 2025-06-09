@@ -2,7 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEngine.UI; // Necesario para acceder a Button
+using UnityEngine.UI; 
 
 public class BotonMenu : MonoBehaviour
 {
@@ -10,7 +10,6 @@ public class BotonMenu : MonoBehaviour
 
     private void Start()
     {
-        // Asegúrate de que el botón está asignado y le añadimos un listener
         if (boton != null)
         {
             boton.onClick.AddListener(IrAlMenu);

@@ -96,21 +96,6 @@ public class UIManager : NetworkBehaviour
                 humanCount++;
         }
 
-        //foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
-        //{
-        //    if (client.PlayerObject == null)
-        //        continue; // Evita el error si aún no tiene PlayerObject
-
-        //    var player = client.PlayerObject.GetComponent<PlayerController>();
-        //    if (player != null)
-        //    {
-        //        if (player.isZombie)
-        //            zombieCount++;
-        //        else
-        //            humanCount++;
-        //    }
-        //}
-
         humansNum.Value = humanCount;
         zombiesNum.Value = zombieCount;
     }
@@ -145,7 +130,7 @@ public class UIManager : NetworkBehaviour
 
     private IEnumerator WaitForCoinManager()
     {
-        float timeout = 5f; // evita esperar eternamente
+        float timeout = 5f;
         float elapsed = 0f;
 
         while (CoinManager.instance == null && elapsed < timeout)

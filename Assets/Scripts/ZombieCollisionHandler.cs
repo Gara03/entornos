@@ -8,7 +8,7 @@ public class ZombieCollisionHandler : NetworkBehaviour
 
     private void OnCollisionEnter(Collision collision)
     {
-        if (!IsOwner) return; // Solo el dueño del zombie detecta la colisión
+        if (!IsOwner) return; 
 
         PlayerController target = collision.gameObject.GetComponent<PlayerController>();
 
@@ -32,7 +32,7 @@ public class ZombieCollisionHandler : NetworkBehaviour
             Vector3 pos = targetObj.transform.position;
             Quaternion rot = targetObj.transform.rotation;
 
-            //targetObj.Despawn(true); // Mueve esto aquí dentro
+            //targetObj.Despawn(true); 
             targetObj.Despawn();
 
             StartCoroutine(RespawnZombieAfterDespawn(targetClientId, pos, rot));
@@ -41,20 +41,20 @@ public class ZombieCollisionHandler : NetworkBehaviour
 
     private IEnumerator RespawnZombieAfterDespawn(ulong clientId, Vector3 position, Quaternion rotation)
     {
-        yield return new WaitForSeconds(0.2f); // Espera un frame para que se complete el despawn
+        yield return new WaitForSeconds(0.2f); 
 
         GameObject newZombie = Instantiate(zombiePrefab, position, rotation);
         NetworkObject netObj = newZombie.GetComponent<NetworkObject>();
 
         if (netObj != null)
         {
-            netObj.SpawnWithOwnership(clientId); // Asigna el ownership al jugador original
+            netObj.SpawnWithOwnership(clientId); 
 
             PlayerController pc = newZombie.GetComponent<PlayerController>();
             if (pc != null)
             {
                 pc.isZombie = true;
-                GameManager.playerRoles[clientId] = true; // <- actualiza el diccionario
+                GameManager.playerRoles[clientId] = true; 
             }
 
             Debug.Log($"[Infección] Jugador {clientId} ha sido transformado en zombi.");
