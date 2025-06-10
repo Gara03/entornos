@@ -27,10 +27,6 @@ public class GameManager : NetworkBehaviour
     [SerializeField] private int maxHumans = 2;
     [SerializeField] private int maxZombies = 2;
 
-    [SerializeField] GameObject StartPanel;
-
-    [SerializeField] GameObject ModeSelect;
-
     [SerializeField] Toggle T_Moneda;
     [SerializeField] Toggle T_Tiempo;
 
@@ -74,6 +70,12 @@ public class GameManager : NetworkBehaviour
 
     [SerializeField] private EndGamePanelController endGamePanel;
     [SerializeField] private GameObject ErrorPanel;
+    [SerializeField] GameObject StartPanel;
+
+    [SerializeField] private TMP_InputField nameInputField;
+    [SerializeField] private Button readyButton;
+
+    [SerializeField] GameObject ModeSelect;
 
     public bool botonesActivos = true;
 
@@ -532,6 +534,27 @@ public class GameManager : NetworkBehaviour
 
     public void AvisarServerJugadorListo_out()
     {
+        // 1. Validar y obtener el nombre del InputField
+        string chosenName = "Jugador Anónimo";
+        if (nameInputField != null && !string.IsNullOrEmpty(nameInputField.text))
+        {
+            chosenName = nameInputField.text;
+        }
+
+        // 2. Obtener el PlayerController del jugador LOCAL
+        var localPlayerController = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerController>();
+
+        // 3. Llamar al RPC del PlayerController para que el servidor actualice su nombre
+        if (localPlayerController != null)
+        {
+            localPlayerController.SetPlayerNameServerRpc(chosenName);
+        }
+        else
+        {
+            Debug.LogError("No se encontró el PlayerController del jugador local.");
+            return;
+        }
+
         ulong clientId = NetworkManager.Singleton.LocalClientId;
         PlayerReadyServerRpc(clientId);
     }

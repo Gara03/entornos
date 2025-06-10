@@ -1,6 +1,7 @@
 using Unity.Netcode;
 using UnityEngine;
 using System.Collections;
+using Unity.Collections;
 
 public class ZombieCollisionHandler : NetworkBehaviour
 {
@@ -48,6 +49,8 @@ public class ZombieCollisionHandler : NetworkBehaviour
             {
                 Debug.Log($"[Servidor] Humano {targetClientId} confirmado para infección. Despawneando y Spawneando como zombi.");
 
+                FixedString32Bytes nameToPreserve = humanPlayerController.GetCurrentName();
+
                 Vector3 pos = targetObj.transform.position;
                 Quaternion rot = targetObj.transform.rotation;
 
@@ -56,7 +59,7 @@ public class ZombieCollisionHandler : NetworkBehaviour
                 targetObj.Despawn(true); // El 'true' opcional puede ser útil para asegurar que el objeto se destruye completamente.
 
                 // Iniciamos la corrutina para respawnear como zombi después de un pequeño retraso
-                StartCoroutine(RespawnZombieAfterDespawn(targetClientId, pos, rot));
+                StartCoroutine(RespawnZombieAfterDespawn(targetClientId, pos, rot, nameToPreserve));
             }
             else
             {
@@ -69,7 +72,7 @@ public class ZombieCollisionHandler : NetworkBehaviour
         }
     }
 
-    private IEnumerator RespawnZombieAfterDespawn(ulong clientId, Vector3 position, Quaternion rotation)
+    private IEnumerator RespawnZombieAfterDespawn(ulong clientId, Vector3 position, Quaternion rotation, FixedString32Bytes nameToPreserve)
     {
         // Pequeño retraso para asegurar que el despawn se ha propagado o procesado
         yield return new WaitForSeconds(0.2f);
@@ -86,7 +89,8 @@ public class ZombieCollisionHandler : NetworkBehaviour
             PlayerController pc = newZombie.GetComponent<PlayerController>();
             if (pc != null)
             {
-                // --- CAMBIO CLAVE: Sincroniza la NetworkVariable y el GameManager.playerRoles ---
+                pc.InitializeNameOnServer(nameToPreserve);
+
                 pc.IsZombieNetVar.Value = true; // El servidor establece la NetworkVariable (se sincroniza a todos)
                 pc.isZombie = true; // Actualiza la variable local en el servidor
 
