@@ -25,7 +25,7 @@ public class CoinManager : NetworkBehaviour
     }
     private void Start()
     {
-        AddCoinServerRpc();
+        ResetCoinServerRpc();
     }
     public override void OnNetworkSpawn()
     {

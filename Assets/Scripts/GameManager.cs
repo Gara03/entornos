@@ -67,6 +67,8 @@ public class GameManager : NetworkBehaviour
     [SerializeField] private EndGamePanelController endGamePanel;
     [SerializeField] private GameObject ErrorPanel;
 
+    public bool botonesActivos = true;
+
 
     void OnGUI()
     {
@@ -84,13 +86,15 @@ public class GameManager : NetworkBehaviour
 
     void StartButtons()
     {
+        if (!botonesActivos)
+        {
+            return;
+        }
         if (GUILayout.Button("Host"))
         {
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
             NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnected;
             _NetworkManager.StartHost();
-
-            
         }
         if (GUILayout.Button("Client"))
         {
@@ -116,6 +120,10 @@ public class GameManager : NetworkBehaviour
 
     private void Start()
     {
+        if (NetworkManager.Singleton.ConnectedClients.Count == 4 && IsServer)
+        {
+            DesactivarUIClientRpc();
+        }
         if (IsClient && !IsServer)
         {
             Debug.Log("[GameManager] Cliente (no host), solicitando construir el nivel.");
@@ -295,6 +303,11 @@ public class GameManager : NetworkBehaviour
     public void FinZombiesClientRpc()
     {
         SceneManager.LoadScene("ZobiesWin");
+    }
+    [ClientRpc]
+    public void DesactivarUIClientRpc()
+    {
+        botonesActivos = false;
     }
     private CoinManager GetCoinManagerInstance()
     {

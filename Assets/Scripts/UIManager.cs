@@ -180,7 +180,7 @@ public class UIManager : NetworkBehaviour
     private void OnGlobalCoinsChanged(int previous, int current)
     {
         if (globalCoinText != null)
-            globalCoinText.text = (current-5).ToString();
+            globalCoinText.text = (current).ToString();
     }
 
     //contador
