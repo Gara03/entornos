@@ -19,8 +19,8 @@ public class PlayerController : NetworkBehaviour
     public int CoinsCollected = 0;
 
     [Header("Character settings")]
-    public bool isZombie = false;
-    public string uniqueID;
+    public bool isZombie = false; // <-- Esto debe ser una NetworkVariable
+    public string uniqueID; // Esto probablemente no es necesario si usas ClientId
 
     [Header("Movement Settings")]
     Vector2 _input;
@@ -37,6 +37,10 @@ public class PlayerController : NetworkBehaviour
 
     [SerializeField] private TextMeshPro nameText3D;
     private NetworkVariable<FixedString32Bytes> playerName = new(writePerm: NetworkVariableWritePermission.Server);
+
+    // --- NUEVO: NetworkVariable para isZombie ---
+    // Esto asegura que el estado de 'isZombie' se sincroniza automáticamente entre el servidor y todos los clientes.
+    public NetworkVariable<bool> IsZombieNetVar = new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
 
     private void Awake()
@@ -74,13 +78,67 @@ public class PlayerController : NetworkBehaviour
 
         if (IsServer)
         {
-            // Convertir el nombre (string) a FixedString32Bytes antes de asignar
+            // Inicializa la NetworkVariable con el rol asignado en GameManager
+            if (GameManager.playerRoles.ContainsKey(OwnerClientId))
+            {
+                IsZombieNetVar.Value = GameManager.playerRoles[OwnerClientId];
+                isZombie = IsZombieNetVar.Value; // Inicializa la variable local para el servidor
+            }
             playerName.Value = new FixedString32Bytes(GetNameByClientId(OwnerClientId));
         }
+        else
+        {
+            // Para clientes, inicializa la variable local con el valor actual de la NetworkVariable
+            isZombie = IsZombieNetVar.Value;
+        }
 
-        // Escuchar cambios y actualizar visualmente el texto
+        // Suscribirse al cambio de la NetworkVariable para actualizar el estado local
+        IsZombieNetVar.OnValueChanged += OnIsZombieChanged;
+
         playerName.OnValueChanged += OnNameChanged;
-        OnNameChanged(new FixedString32Bytes(""), playerName.Value); // Llama con FixedString también aquí
+        OnNameChanged(new FixedString32Bytes(""), playerName.Value);
+
+        // Enviar un mensaje de "listo" al GameManager solo una vez por cliente
+        if (IsOwner)
+        {
+            GameManager gm = FindObjectOfType<GameManager>();
+            if (gm != null)
+            {
+                gm.AvisarServerJugadorListo_out();
+            }
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        base.OnNetworkDespawn();
+        IsZombieNetVar.OnValueChanged -= OnIsZombieChanged;
+        playerName.OnValueChanged -= OnNameChanged;
+    }
+
+    // --- NUEVO: Callback para cuando la NetworkVariable isZombie cambie ---
+    private void OnIsZombieChanged(bool oldIsZombie, bool newIsZombie)
+    {
+        isZombie = newIsZombie; // Actualiza la variable local 'isZombie'
+        Debug.Log($"[PlayerController {OwnerClientId}] Rol actualizado via NetworkVariable: oldIsZombie={oldIsZombie}, newIsZombie={newIsZombie}.");
+    }
+
+    // --- NUEVO RPC para que el servidor actualice el rol del cliente (llamado desde GameManager) ---
+    [ClientRpc]
+    public void SetIsZombieClientRpc(bool newIsZombie)
+    {
+        // Esto solo se llama en el cliente propietario del PlayerController
+        // y el servidor ya habrá actualizado IsZombieNetVar.
+        // Lo que necesitamos es que el GameManager actualice su diccionario estático en TODOS los clientes.
+        // La actualización de IsZombieNetVar ya hace que OnIsZombieChanged se llame en todos.
+        // Lo que necesitamos es que el GameManager también actualice su diccionario estático en todos los clientes.
+        GameManager gm = FindObjectOfType<GameManager>();
+        if (gm != null)
+        {
+            // Esto solo lo hace el servidor para su propio `playerRoles` y lo propaga a los clientes a través del RPC del GameManager.
+            // O podemos hacer que cada PlayerController le pida al GameManager que actualice su rol en el diccionario estático.
+            // La mejor forma es que GameManager tenga un RPC para actualizar su diccionario estático.
+        }
     }
 
 
@@ -108,6 +166,8 @@ public class PlayerController : NetworkBehaviour
         if (!IsOwner)
         {
             animator.SetFloat("Speed", netSpeed.Value);
+            // El estado de isZombie ya está sincronizado por IsZombieNetVar
+            // y se maneja en OnIsZombieChanged para cualquier lógica de apariencia.
         }
     }
 
@@ -118,7 +178,8 @@ public class PlayerController : NetworkBehaviour
         horizontalInput = _input.x;
         verticalInput = _input.y;
 
-        float currentSpeed = isZombie ? zombieSpeedModifier * moveSpeed : moveSpeed;
+        // Usamos el valor sincronizado de IsZombieNetVar
+        float currentSpeed = IsZombieNetVar.Value ? zombieSpeedModifier * moveSpeed : moveSpeed;
 
         Vector3 moveDirection = new Vector3(horizontalInput, 0, verticalInput).normalized;
 
@@ -152,7 +213,7 @@ public class PlayerController : NetworkBehaviour
 
     public void CoinCollected()
     {
-        if (!isZombie)
+        if (!IsZombieNetVar.Value) // Usar el valor sincronizado
         {
             CoinsCollected++;
             UpdateCoinUI();
@@ -164,4 +225,86 @@ public class PlayerController : NetworkBehaviour
         if (coinText != null)
             coinText.text = $"{CoinsCollected}";
     }
+
+    // --- NUEVO: Método para cambiar el rol del jugador (llamado desde la lógica de colisión en el servidor) ---
+    [ServerRpc(RequireOwnership = false)]
+    public void ChangeToZombieServerRpc(ulong clientId)
+    {
+        if (!IsServer) return;
+
+        // Aseguramos que el rol se actualiza en el diccionario estático del GameManager en el servidor
+        if (GameManager.playerRoles.ContainsKey(clientId))
+        {
+            GameManager.playerRoles[clientId] = true; // true = zombie
+            Debug.Log($"[Server] Cliente {clientId} se ha convertido en ZOMBI en GameManager.playerRoles.");
+        }
+        else
+        {
+            Debug.LogWarning($"[Server] Cliente {clientId} no encontrado en GameManager.playerRoles al intentar convertir a zombie.");
+            return;
+        }
+
+        // Actualizamos la NetworkVariable en este PlayerController para que se sincronice con todos los clientes
+        IsZombieNetVar.Value = true;
+        isZombie = true; // Actualiza la variable local del servidor
+
+        // Informar al GameManager para que actualice su diccionario estático en TODOS los clientes
+        GameManager gm = FindObjectOfType<GameManager>();
+        if (gm != null)
+        {
+            gm.UpdatePlayerRoleClientRpc(clientId, true); // Enviar RPC para actualizar diccionario estático en clientes
+        }
+
+        // Opcional: Cambiar prefab si es necesario (requiere spawn/despawn o cambio de MeshRenderer/material)
+        // Esto podría ser más complejo, pero la lógica de rol ya estaría actualizada.
+        // Si tienes diferentes modelos/materiales para humanos y zombies, aquí deberías gestionarlo.
+        // Por ejemplo, activar/desactivar MeshRenderers o cambiar materiales.
+       // UpdatePlayerAppearanceClientRpc(); // Llamar a un RPC para que todos actualicen la apariencia
+    }
+
+    // --- NUEVO: RPC para que todos los clientes actualicen la apariencia del jugador ---
+    /*[ClientRpc]
+    public void UpdatePlayerAppearanceClientRpc()
+    {
+        UpdatePlayerAppearance();
+    }
+
+    // --- NUEVO: Método para actualizar la apariencia (ej. material, modelo) basado en el rol ---
+    private void UpdatePlayerAppearance()
+    {
+        // Ejemplo: cambiar el color del material
+        Renderer playerRenderer = GetComponent<Renderer>();
+        if (playerRenderer != null)
+        {
+            if (IsZombieNetVar.Value)
+            {
+                playerRenderer.material.color = Color.green; // Color para zombies
+            }
+            else
+            {
+                playerRenderer.material.color = Color.blue; // Color para humanos
+            }
+        }
+        // Si tienes modelos diferentes, podrías activar/desactivar GameObjects
+        // Ejemplo:
+        // humanModel.SetActive(!IsZombieNetVar.Value);
+        // zombieModel.SetActive(IsZombieNetVar.Value);
+    }*/
+
+
+    // --- Asegúrate de llamar a este método desde tu lógica de colisión (solo en el servidor) ---
+    // Por ejemplo, en tu script de colisión (si tienes uno aparte) o aquí mismo si es una colisión de PlayerController
+    private void OnTriggerEnter(Collider other)
+    {
+        if (!IsServer) return; // Solo el servidor procesa las colisiones para la conversión
+
+        PlayerController otherPlayer = other.GetComponent<PlayerController>();
+        if (otherPlayer != null && otherPlayer.IsOwner && this.IsZombieNetVar.Value && !otherPlayer.IsZombieNetVar.Value)
+        {
+            // Si yo soy un zombie (this) y el otro es un humano (otherPlayer)
+            Debug.Log($"[Server] Zombie {this.OwnerClientId} tocó a Humano {otherPlayer.OwnerClientId}. Convirtiendo...");
+            otherPlayer.ChangeToZombieServerRpc(otherPlayer.OwnerClientId);
+        }
+    }
+
 }

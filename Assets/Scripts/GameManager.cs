@@ -4,6 +4,8 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using Unity.Collections; // Necesario para FixedString
+using System.Runtime.CompilerServices;
 
 public enum GameMode
 {
@@ -62,6 +64,12 @@ public class GameManager : NetworkBehaviour
     private int seed;
     public LevelBuilder levelBuilder;
 
+    // --- CAMBIO IMPORTANTE: Usaremos NetworkDictionary para playerRoles si es posible,
+    // --- o una NetworkList y la actualizaremos con RPCs para asegurar la sincronización.
+    // --- Para mantener la estructura actual, vamos a hacer que el servidor envíe el rol.
+    // --- Por ahora, mantenemos el static Dictionary, pero su uso directo en clientes
+    // --- para determinar el rol local es el problema.
+
     public static Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
 
     [SerializeField] private EndGamePanelController endGamePanel;
@@ -107,7 +115,7 @@ public class GameManager : NetworkBehaviour
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
             NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnected;
             _NetworkManager.StartServer();
-            
+
         }
     }
 
@@ -198,7 +206,8 @@ public class GameManager : NetworkBehaviour
                 {
                     timerRunning = false;
                     Debug.Log("[GameManager] Tiempo agotado, ganan los humanos!");
-                    EndGame("Human", "Tiempo");
+                    // --- MODIFICACIÓN: Llamamos a un nuevo RPC para manejar el fin de juego por tiempo
+                    EndGameTimerClientRpc("Human", "Tiempo");
                 }
             }
             // Comprobamos si quedan humanos vivos
@@ -215,34 +224,23 @@ public class GameManager : NetworkBehaviour
             if (humanosVivos == 0 && partidalista && NetworkManager.Singleton.ConnectedClients.Count > 1)
             {
                 Debug.Log("[GameManager] No quedan humanos vivos, fin de partida. Ganan los zombis.");
-                tellClientEndGameClientRpc();
+                // --- MODIFICACIÓN: Llamamos a un nuevo RPC para manejar el fin de juego por zombies
+                EndGameZombieWinClientRpc("Zombie", "DaIgual");
             }
 
         }
         var coinManager = GetCoinManagerInstance();
         if (coinManager != null && coinManager.globalCoins.Value >= 10)
         {
-            EndGame("Human", "Monedas");
-
+            // --- MODIFICACIÓN: Llamamos a un nuevo RPC para manejar el fin de juego por monedas
+            EndGameCoinsClientRpc("Human", "Monedas");
         }
         //contador
+        // El cliente solo actualiza su propia UI, no la lógica de fin de juego
         if (!IsServer && timerRunning && gameMode == GameMode.Tiempo)
         {
-            timeRemaining -= Time.deltaTime;
-            syncedTime.Value = timeRemaining;
+            timeRemaining = syncedTime.Value; // El cliente toma el tiempo sincronizado del servidor
             UIManager.Instance?.UpdateTimerDisplay(timeRemaining);
-
-            Debug.Log("[GameManager] Temporizador corriendo: " + timeRemaining);
-
-            UIManager.Instance?.UpdateTimerDisplay(timeRemaining);
-
-            if (timeRemaining <= 0f)
-            {
-                timeRemaining = 0f;
-                timerRunning = false;
-                Debug.Log("[GameManager] Tiempo agotado, ganan los humanos!");
-                EndGame("Human","Tiempo");
-            }
         }
     }
     //contador
@@ -251,39 +249,74 @@ public class GameManager : NetworkBehaviour
         return syncedTime;
     }
 
-    public void EndGame(string winnerTeam, string gameMode)
+    // --- Función original EndGame, ahora solo llamada por los ClientRpc
+    public void EndGame(string winnerTeam, string gameMode, bool localPlayerIsZombie)
     {
-        ulong localId = NetworkManager.Singleton.LocalClientId;
-
-        bool isZombie = GameManager.playerRoles.ContainsKey(localId) && GameManager.playerRoles[localId];
         string resultMessage = "";
 
         if (winnerTeam == "Human" && gameMode == "Monedas")
         {
-            resultMessage = isZombie
+            resultMessage = localPlayerIsZombie
                 ? "Has perdido... los humanos han recolectado todas las monedas."
                 : "¡Ganaste! Los humanos habéis recolectado todas las monedas.";
         }
         else if (winnerTeam == "Human" && gameMode == "Tiempo")
         {
-            resultMessage = isZombie
+            resultMessage = localPlayerIsZombie
                 ? "Has perdido... se te ha acabado el tiempo y los humanos han sobrevivido."
                 : "¡Ganaste! Los humanos habéis sobrevivido.";
         }
         else if (winnerTeam == "Zombie" && gameMode == "DaIgual")
         {
-            resultMessage = isZombie
+            resultMessage = localPlayerIsZombie
                 ? "¡Ganaste! Los zombis habéis atrapado a todos los humanos."
                 : "Has perdido... los zombis os han atrapado a todos.";
         }
 
         endGamePanel.ShowEndGamePanel(resultMessage);
     }
+
+    // Estos RPCs finales ahora obtendrán el rol local del diccionario playerRoles,
+    // que se ha actualizado en todos los clientes gracias a UpdatePlayerRoleClientRpc.
     [ClientRpc]
-    public void tellClientEndGameClientRpc()
+    public void EndGameTimerClientRpc(string winnerTeam, string gameMode)
     {
-        EndGame("Zombie", "DaIgual");
+        ulong localId = NetworkManager.Singleton.LocalClientId;
+        bool localPlayerIsZombie = playerRoles.ContainsKey(localId) && playerRoles[localId];
+        Debug.Log($"[GameManager Client] Cliente {localId}: WinnerTeam = {winnerTeam}, GameMode = {gameMode}, Mi rol (playerRoles) = {localPlayerIsZombie}"); // Mantén este log para verificar
+        EndGame(winnerTeam, gameMode, localPlayerIsZombie);
     }
+
+    [ClientRpc]
+    public void EndGameCoinsClientRpc(string winnerTeam, string gameMode)
+    {
+        ulong localId = NetworkManager.Singleton.LocalClientId;
+        bool localPlayerIsZombie = playerRoles.ContainsKey(localId) && playerRoles[localId];
+        Debug.Log($"[GameManager Client] Cliente {localId}: WinnerTeam = {winnerTeam}, GameMode = {gameMode}, Mi rol (playerRoles) = {localPlayerIsZombie}"); // Mantén este log para verificar
+        EndGame(winnerTeam, gameMode, localPlayerIsZombie);
+    }
+
+
+    [ClientRpc]
+    public void EndGameZombieWinClientRpc(string winnerTeam, string gameMode)
+    {
+        ulong localId = NetworkManager.Singleton.LocalClientId;
+        bool localPlayerIsZombie = playerRoles.ContainsKey(localId) && playerRoles[localId];
+        Debug.Log($"[GameManager Client] Cliente {localId}: WinnerTeam = {winnerTeam}, GameMode = {gameMode}, Mi rol (playerRoles) = {localPlayerIsZombie}"); // Mantén este log para verificar
+        EndGame(winnerTeam, gameMode, localPlayerIsZombie);
+    }
+
+    // --- RPC NUEVO E IMPORTANTE para actualizar el diccionario playerRoles en todos los clientes ---
+    // Este es el RPC CRÍTICO para asegurar la sincronización del rol en TODOS los clientes.
+    [ClientRpc]
+    public void UpdatePlayerRoleClientRpc(ulong clientId, bool isZombie)
+    {
+        Debug.Log($"[GameManager ClientRpc] Actualizando rol para el cliente {clientId}: isZombie = {isZombie}");
+        playerRoles[clientId] = isZombie; // Esto actualiza el diccionario estático en TODOS los clientes
+        UIManager.Instance?.ForceRefreshCounts(); // Si tienes UI que muestre el conteo de roles, fuerza su actualización
+    }
+
+
     [ClientRpc]
     private void ShowErrorPanelClientRpc()
     {
@@ -351,6 +384,10 @@ public class GameManager : NetworkBehaviour
             }
 
             ModeSelect.SetActive(true);
+            /*
+            NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
+            NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnected;
+            */
         }
         else
         {
@@ -361,6 +398,21 @@ public class GameManager : NetworkBehaviour
 
     }
 
+    // IMPORTANTE: Asegúrate de desuscribirte de los eventos en OnNetworkDespawn
+    public override void OnNetworkDespawn()
+    {
+        if (IsServer)
+        {
+            if (NetworkManager.Singleton != null) // Asegúrate de que el Singleton no sea nulo al desuscribirte
+            {
+                NetworkManager.Singleton.OnClientConnectedCallback -= HandleClientConnected;
+                NetworkManager.Singleton.OnClientDisconnectCallback -= HandleClientDisconnected;
+            }
+        }
+        base.OnNetworkDespawn();
+    }
+
+
     [ClientRpc]
     private void partidalistaClientRpc()
     {
@@ -368,7 +420,7 @@ public class GameManager : NetworkBehaviour
         Coins = GameObject.FindGameObjectsWithTag("Moneda");
         if (gameMode == GameMode.Tiempo)
         {
-            for (int i = 0; i < Coins.Length; i++) 
+            for (int i = 0; i < Coins.Length; i++)
             {
                 Coins[i].SetActive(false);
             }
@@ -411,10 +463,21 @@ public class GameManager : NetworkBehaviour
         PlayerController pc = instancia.GetComponent<PlayerController>();
         if (pc != null)
         {
-            pc.isZombie = !isHuman;
-        }
+            // El servidor actualiza el rol en el PlayerController del cliente
+            pc.SetIsZombieClientRpc(!isHuman); // Asegúrate de que PlayerController tiene este RPC
+            pc.isZombie = !isHuman; // Actualiza la variable local del servidor para consistencia
 
-        Debug.Log($"[GameManager] Jugador {clientId} {(isHuman ? "Humano" : "Zombi")} instanciado en {spawnPosition}");
+            // **** ¡¡¡LA LÍNEA CRÍTICA QUE FALTABA!!! ****
+            // Llama al ClientRpc para que TODOS los clientes (incluido el zombi original)
+            // actualicen su diccionario GameManager.playerRoles con el rol de este jugador.
+            UpdatePlayerRoleClientRpc(clientId, !isHuman); // !isHuman porque isZombie es true si no es humano
+
+            Debug.Log($"[GameManager] Jugador {clientId} {(isHuman ? "Humano" : "Zombi")} instanciado en {spawnPosition}. Rol sincronizado.");
+        }
+        else
+        {
+            Debug.LogError($"[GameManager] El prefab {(isHuman ? "Human" : "Zombie")} para el cliente {clientId} no tiene un PlayerController.");
+        }
     }
 
     private void HandleClientDisconnected(ulong clientId)
@@ -427,8 +490,23 @@ public class GameManager : NetworkBehaviour
             playerRoles.Remove(clientId);
             Debug.Log($"[GameManager] Rol eliminado para cliente {clientId}");
         }
+        // ¡Importante! Llama a este ClientRpc para que TODOS los clientes
+        // también eliminen al jugador de su diccionario playerRoles.
+        RemovePlayerRoleClientRpc(clientId);
 
         UIManager.Instance?.ForceRefreshCounts();
+    }
+
+    // Añade este nuevo ClientRpc para eliminar un rol en todos los clientes cuando un jugador se desconecta
+    [ClientRpc]
+    public void RemovePlayerRoleClientRpc(ulong clientId)
+    {
+        if (playerRoles.ContainsKey(clientId))
+        {
+            playerRoles.Remove(clientId);
+            Debug.Log($"[GameManager ClientRpc] Rol eliminado para cliente {clientId} en el cliente.");
+        }
+        UIManager.Instance?.ForceRefreshCounts(); // Asegúrate de refrescar la UI
     }
 
 
@@ -458,7 +536,7 @@ public class GameManager : NetworkBehaviour
         PlayerReadyServerRpc(clientId);
     }
 
-    private bool AsignarRol(ulong clientId)
+    public bool AsignarRol(ulong clientId) // Public para que PlayerController lo pueda usar si se convierte
     {
         int totalZombies = 0;
         int totalHumanos = 0;
@@ -469,39 +547,57 @@ public class GameManager : NetworkBehaviour
             else totalHumanos++;
         }
 
-        if (totalZombies == 0 && totalHumanos == 0)
+        // --- Lógica de asignación de roles. Asegúrate de que el rol se guarda correctamente en playerRoles.
+        // --- Si un jugador ya está en playerRoles, significa que ya tiene un rol.
+        // --- Esta lógica parece asignar el rol solo al conectarse.
+        // --- Si un humano se convierte en zombie, playerRoles DEBE actualizarse en el servidor
+        // --- y luego esa actualización debe propagarse a los clientes.
+
+        bool assignedRole = false;
+        if (NetworkManager.Singleton.IsHost && clientId == NetworkManager.Singleton.LocalClientId)
+        {
+            // El host es siempre zombie
+            playerRoles[clientId] = true;
+            Debug.Log($"Jugador {clientId} (Host) asignado como ZOMBI");
+            assignedRole = true;
+            return false; // Retorna false si es zombie (isHuman = false)
+        }
+        else if (totalZombies == 0 && totalHumanos == 0) // Primer jugador (no host si host ya asignó)
         {
             playerRoles[clientId] = true;
             Debug.Log($"Jugador {clientId} asignado como ZOMBI (primer jugador)");
+            assignedRole = true;
             return false;
         }
         else if (totalZombies < totalHumanos && totalZombies < maxZombies)
         {
             playerRoles[clientId] = true;
             Debug.Log($"Jugador {clientId} asignado como ZOMBI");
+            assignedRole = true;
             return false;
         }
-        else if (totalZombies > totalHumanos && totalHumanos < maxHumans)
+        else if (totalHumanos < maxHumans) // Priorizar humanos si hay espacio
         {
             playerRoles[clientId] = false;
             Debug.Log($"Jugador {clientId} asignado como HUMANO");
+            assignedRole = true;
             return true;
         }
-        else if (totalHumanos == totalZombies && totalZombies < maxZombies)
+        else if (totalZombies < maxZombies) // Si no hay espacio para humanos, y hay espacio para zombies
         {
             playerRoles[clientId] = true;
             Debug.Log($"Jugador {clientId} asignado como ZOMBI");
+            assignedRole = true;
             return false;
         }
-        else if (totalZombies >= maxZombies && totalHumanos >= maxHumans)
+        // Fallback: si no se pudo asignar por límite o lógica
+        if (!assignedRole)
         {
-            Debug.Log($"ERROR: La sala está llena, intentalo más tarde :)");
-            return false;
+            Debug.LogWarning("No se pudo asignar rol. Asignando como HUMANO por defecto (o ya en límite).");
+            playerRoles[clientId] = false; // Asignar como humano por defecto si no hay otra opción
+            return true;
         }
-
-        Debug.LogWarning("No se pudo asignar rol. Asignando como HUMANO por defecto.");
-        playerRoles[clientId] = false;
-        return true;
+        return false; // Por defecto, si no se cumple ninguna condición previa (debería ser inalcanzable con la lógica de assignedRole)
     }
 
     private Vector3 ObtenerPuntoDeSpawn(bool isHuman)
