@@ -98,15 +98,15 @@ public class PlayerController : NetworkBehaviour
         playerName.OnValueChanged += OnNameChanged;
         OnNameChanged(new FixedString32Bytes(""), playerName.Value);
 
-        // Enviar un mensaje de "listo" al GameManager solo una vez por cliente
-        if (IsOwner)
-        {
-            GameManager gm = FindObjectOfType<GameManager>();
-            if (gm != null)
-            {
-                gm.AvisarServerJugadorListo_out();
-            }
-        }
+        //// Enviar un mensaje de "listo" al GameManager solo una vez por cliente
+        //if (IsOwner)
+        //{
+        //    GameManager gm = FindObjectOfType<GameManager>();
+        //    if (gm != null)
+        //    {
+        //        gm.AvisarServerJugadorListo_out();
+        //    }
+        //}
     }
 
     public override void OnNetworkDespawn()
