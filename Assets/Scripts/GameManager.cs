@@ -184,7 +184,7 @@ public class GameManager : NetworkBehaviour
                 if (timeRemaining < 0f) timeRemaining = 0f;
 
                 syncedTime.Value = timeRemaining; // esto sincroniza a los clientes
-                Debug.Log("[GameManager] Temporizador corriendo: " + timeRemaining);
+                //Debug.Log("[GameManager] Temporizador corriendo: " + timeRemaining);
 
                 if (timeRemaining <= 0f)
                 {
@@ -204,7 +204,7 @@ public class GameManager : NetworkBehaviour
                 }
             }
 
-            if (humanosVivos == 0 && partidalista)
+            if (humanosVivos == 0 && partidalista && NetworkManager.Singleton.ConnectedClients.Count > 1)
             {
                 Debug.Log("[GameManager] No quedan humanos vivos, fin de partida. Ganan los zombis.");
                 tellClientEndGameClientRpc();
@@ -256,23 +256,11 @@ public class GameManager : NetworkBehaviour
                 ? "Has perdido... los humanos han recolectado todas las monedas."
                 : "¡Ganaste! Los humanos habéis recolectado todas las monedas.";
         }
-        else if (winnerTeam == "Zombie" && gameMode == "Monedas")
-        {
-            resultMessage = isZombie
-                ? "¡Ganaste! Los zombis habéis atrapado a todos los humanos."
-                : "Has perdido... los zombis os han atrapado a todos.";
-        }
         else if (winnerTeam == "Human" && gameMode == "Tiempo")
         {
             resultMessage = isZombie
                 ? "Has perdido... se te ha acabado el tiempo y los humanos han sobrevivido."
                 : "¡Ganaste! Los humanos habéis sobrevivido.";
-        }
-        else if (winnerTeam == "Zombie" && gameMode == "Tiempo")
-        {
-            resultMessage = isZombie
-                ? "¡Ganaste! Los zombis habéis atrapado a todos los humanos."
-                : "Has perdido... los zombis os han atrapado a todos.";
         }
         else if (winnerTeam == "Zombie" && gameMode == "DaIgual")
         {
