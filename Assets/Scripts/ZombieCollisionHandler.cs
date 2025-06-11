@@ -86,6 +86,8 @@ public class ZombieCollisionHandler : NetworkBehaviour
             // Spawnea el nuevo zombi con la misma propiedad del cliente original
             netObj.SpawnWithOwnership(clientId);
 
+            GameManager.Instance.RegisterSpawnedObject(netObj);
+
             PlayerController pc = newZombie.GetComponent<PlayerController>();
             if (pc != null)
             {

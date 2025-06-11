@@ -105,6 +105,11 @@ public class UIManager : NetworkBehaviour
         // Mostrar los valores actualizados en UI (todos los clientes)
         humanCountText.text = humansNum.Value.ToString();
         zombieCountText.text = zombiesNum.Value.ToString();
+        if(CoinManager.instance != null && GameManager.Instance.gameMode == GameMode.Monedas)
+        {
+            globalCoinText.gameObject.SetActive(true);
+            globalCoinText.text = CoinManager.instance.globalCoins.Value.ToString();
+        }
 
         // Solo el servidor actualiza los datos de red
         if (!IsServer) return;
@@ -152,30 +157,79 @@ public class UIManager : NetworkBehaviour
         Debug.Log($"[UIManager] Conteo forzado: Humanos={humanCount}, Zombis={zombieCount}");
     }
 
+    //private IEnumerator WaitForCoinManager()
+    //{
+    //    float timeout = 5f;
+    //    float elapsed = 0f;
+
+    //    while (CoinManager.instance == null && elapsed < timeout)
+    //    {
+    //        elapsed += Time.deltaTime;
+    //        yield return null;
+    //    }
+
+    //    if (CoinManager.instance != null)
+    //    {
+    //        CoinManager.instance.globalCoins.OnValueChanged += OnGlobalCoinsChanged;
+    //        OnGlobalCoinsChanged(0, CoinManager.instance.globalCoins.Value);
+    //        Debug.Log("[UIManager] CoinManager conectado correctamente.");
+    //    }
+    //    else
+    //    {
+    //        Debug.LogWarning("[UIManager] Timeout esperando CoinManager.");
+    //    }
+    //}
+
     private IEnumerator WaitForCoinManager()
     {
-        float timeout = 5f;
+        // --- PASO 1: Esperar a que el GameManager exista y sepamos el modo de juego ---
+        // No hacemos nada hasta que el GameManager, que es el jefe, esté listo.
+        while (GameManager.Instance == null)
+        {
+            yield return null; // Espera un frame
+        }
+
+        // Le damos un respiro para que el ClientRpc que informa del modo de juego llegue al cliente.
+        yield return new WaitForSeconds(0.5f);
+
+        // --- PASO 2: Comprobar el modo de juego ANTES de buscar nada ---
+        // Si el modo NO es Monedas, no tiene sentido buscar el CoinManager.
+        if (GameManager.Instance.gameMode != GameMode.Monedas)
+        {
+            Debug.Log("[UIManager] El modo de juego es TIEMPO. No se buscará el CoinManager. Ocultando UI.");
+            if (globalCoinText != null)
+            {
+                globalCoinText.gameObject.SetActive(false);
+            }
+            yield break; // Termina la corrutina aquí mismo. Misión cumplida.
+        }
+
+        // --- PASO 3: Si SÍ es modo Monedas, AHORA SÍ buscamos el CoinManager ---
+        Debug.Log("[UIManager] El modo de juego es MONEDAS. Empezando a buscar el CoinManager...");
+
+        float timeout = 10f; // Le damos 10 segundos de margen desde que empieza la partida.
         float elapsed = 0f;
 
+        // Usamos tu variable 'instance' con 'i' minúscula.
         while (CoinManager.instance == null && elapsed < timeout)
         {
             elapsed += Time.deltaTime;
             yield return null;
         }
 
+        // --- PASO 4: Suscribirse si lo hemos encontrado ---
         if (CoinManager.instance != null)
         {
+            Debug.Log("[UIManager] ¡CoinManager encontrado! Suscribiendo al evento de la UI.");
             CoinManager.instance.globalCoins.OnValueChanged += OnGlobalCoinsChanged;
             OnGlobalCoinsChanged(0, CoinManager.instance.globalCoins.Value);
-            Debug.Log("[UIManager] CoinManager conectado correctamente.");
         }
         else
         {
-            Debug.LogWarning("[UIManager] Timeout esperando CoinManager.");
+            // Si después de 10 segundos en modo monedas no aparece, algo va muy mal.
+            Debug.LogError("[UIManager] Timeout! El juego está en Modo Monedas pero el CoinManager nunca apareció en este cliente.");
         }
     }
-
-
 
     private void OnGlobalCoinsChanged(int previous, int current)
     {

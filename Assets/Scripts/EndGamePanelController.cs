@@ -35,7 +35,7 @@ public class EndGamePanelController : MonoBehaviour
         }
         if (botonReiniciar != null)
         {
-            botonReiniciar.onClick.AddListener(VolverAJugarServerRpc);
+            //botonReiniciar.onClick.AddListener(VolverAJugarServerRpc);
 
         }
         else

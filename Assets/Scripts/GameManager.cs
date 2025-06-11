@@ -1,12 +1,11 @@
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using Unity.Collections; // Necesario para FixedString
-using System.Runtime.CompilerServices;
-using System.Collections;
 
 public enum GameMode
 {
@@ -16,68 +15,75 @@ public enum GameMode
 
 public class GameManager : NetworkBehaviour
 {
-    [SerializeField] NetworkManager _NetworkManager;
+    public static GameManager Instance { get; private set; }
 
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+        }
+        else
+        {
+            Instance = this;
+        }
+    }
+
+    [SerializeField] NetworkManager _NetworkManager;
     [SerializeField] CoinManager coinManager;
 
     [Header("Prefabs")]
     [SerializeField] GameObject playerPrefab;
     [SerializeField] GameObject zombiePrefab;
+    [SerializeField] private GameObject coinManagerPrefab;
 
     [Header("Team Settings")]
     [SerializeField] private int maxHumans = 2;
     [SerializeField] private int maxZombies = 2;
 
+    [Header("Lobby UI")]
     [SerializeField] Toggle T_Moneda;
     [SerializeField] Toggle T_Tiempo;
-
-    private GameObject[] Coins;
-
-    //contador
-    [SerializeField] private float matchDuration = 30f; // Duración total de la partida en segundos
-    private float timeRemaining;
-    private bool timerRunning = false;
-    private NetworkVariable<float> syncedTime = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-    private bool timerInitialized = false;
-
-    // EN GameManager.cs
-    private NetworkVariable<int> readyPlayerCount = new NetworkVariable<int>(1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
-
-    private bool partidalista = false;
-
-    [Header("Game Mode Settings")]
-    [SerializeField] public GameMode gameMode;
-    [SerializeField] private int minutes = 5;
-
-    [SerializeField] private GameObject coinManagerPrefab;
-
-    [Header("Puntos de Spawn Manuales")]
-    [SerializeField] private List<Transform> humanSpawnPoints;
-    [SerializeField] private List<Transform> zombieSpawnPoints;
-    private float remainingSeconds;
-
-
-    private int seed;
-    public LevelBuilder levelBuilder;
-
-    public static Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
+    [SerializeField] private TMP_InputField nameInputField;
+    [SerializeField] private Button readyButton;
+    [SerializeField] private TMP_Text readyCountText;
+    [SerializeField] private Button startGameButton;
+    [SerializeField] GameObject ModeSelect;
 
     [Header("Panels")]
     [SerializeField] private EndGamePanelController endGamePanel;
     [SerializeField] private GameObject ErrorPanel;
     [SerializeField] GameObject StartPanel;
 
-    [Header("Lobby UI")]
-    [SerializeField] private TMP_InputField nameInputField;
-    [SerializeField] private Button readyButton;
-    [SerializeField] private TMP_Text readyCountText;
-    [SerializeField] private Button startGameButton;
+    [Header("Game Mode Settings")]
+    [SerializeField] public GameMode gameMode;
+    [SerializeField] private float matchDuration = 30f;
+    [SerializeField] private int minutes = 5;
 
-    [SerializeField] GameObject ModeSelect;
+    [Header("Spawning & Level")]
+    [SerializeField] private List<Transform> humanSpawnPoints;
+    [SerializeField] private List<Transform> zombieSpawnPoints;
+    public LevelBuilder levelBuilder;
+    private int seed;
 
+    // --- State Variables ---
+    private NetworkVariable<float> syncedTime = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private NetworkVariable<int> readyPlayerCount = new NetworkVariable<int>(1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private List<ulong> clientsReady = new List<ulong>();
+    private bool partidalista = false;
+    private float timeRemaining;
+    private bool timerRunning = false;
+    private bool timerInitialized = false;
     public bool botonesActivos = true;
+    public static Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
 
-
+    // ----> LISTA CLAVE: Para registrar todos los objetos de red que se instancian en la partida.
+    private List<NetworkObject> spawnedNetworkObjects = new List<NetworkObject>();
+    public NetworkVariable<float> GetSyncedTime()
+    {
+        return syncedTime;
+    }
+    #region Unity & Connection Callbacks
     void OnGUI()
     {
         GUILayout.BeginArea(new Rect(10, 10, 300, 300));
@@ -94,10 +100,7 @@ public class GameManager : NetworkBehaviour
 
     void StartButtons()
     {
-        if (!botonesActivos)
-        {
-            return;
-        }
+        if (!botonesActivos) return;
         if (GUILayout.Button("Host"))
         {
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
@@ -107,15 +110,12 @@ public class GameManager : NetworkBehaviour
         if (GUILayout.Button("Client"))
         {
             _NetworkManager.StartClient();
-            //Cursor.lockState = CursorLockMode.Locked;
-            //Cursor.visible = false;
         }
         if (GUILayout.Button("Server"))
         {
             NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
             NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnected;
             _NetworkManager.StartServer();
-
         }
     }
 
@@ -126,35 +126,77 @@ public class GameManager : NetworkBehaviour
         GUILayout.Label("Modo: " + mode);
     }
 
-    private void Start()
+    public override void OnNetworkSpawn()
     {
-        if (NetworkManager.Singleton.ConnectedClients.Count == 4 && IsServer)
-        {
-            DesactivarUIClientRpc();
-        }
-        if (IsClient && !IsServer)
-        {
-            Debug.Log("[GameManager] Cliente (no host), solicitando construir el nivel.");
-        }
-
         if (IsServer)
         {
-            Debug.Log("[GameManager] Start() en servidor.");
-            //contador
-            if (partidalista && !timerRunning && gameMode == GameMode.Tiempo)
+            Debug.Log("[GameManager] OnNetworkSpawn() en servidor.");
+            playerRoles.Clear();
+            seed = Random.Range(int.MinValue, int.MaxValue);
+
+            if (levelBuilder != null)
             {
-                timeRemaining = matchDuration;
-                timerRunning = true;
+                levelBuilder.Build(seed);
+                InformClientsToBuildLevelClientRpc(seed);
             }
-            timeRemaining = matchDuration;  //contador
+            else
+            {
+                Debug.LogError("LevelBuilder no está asignado.");
+            }
+
+            //if (coinManagerPrefab != null)
+            //{
+            //    GameObject coinObj = Instantiate(coinManagerPrefab);
+            //    NetworkObject netObj = coinObj.GetComponent<NetworkObject>();
+            //    netObj.Spawn();
+            //    // ----> AÑADIDO: Guardamos el NetworkObject del CoinManager.
+            //    spawnedNetworkObjects.Add(netObj);
+            //    Debug.Log($"[GameManager] CoinManager instanciado y spawneado: {netObj.NetworkObjectId}");
+            //}
+
+            ModeSelect.SetActive(true);
+            NetworkManager.SceneManager.OnLoadEventCompleted += OnSceneReloaded;
+        }
+        else
+        {
+            Debug.Log("[GameManager] OnNetworkSpawn() en cliente.");
+            ModeSelect.SetActive(false);
+            RequestBuildLevelServerRpc();
         }
 
-        remainingSeconds = minutes * 60;
+        ConfigureLobbyUI();
+        readyPlayerCount.OnValueChanged += OnReadyCountChanged;
+
+        if (IsHost)
+        {
+            NetworkManager.Singleton.OnClientConnectedCallback += (id) => UpdateHostLobbyUI();
+            NetworkManager.Singleton.OnClientDisconnectCallback += (id) => UpdateHostLobbyUI();
+        }
     }
 
+    public override void OnNetworkDespawn()
+    {
+        // Limpieza de eventos para evitar errores.
+        if (NetworkManager.Singleton != null)
+        {
+            readyPlayerCount.OnValueChanged -= OnReadyCountChanged;
+            if (IsServer)
+            {
+                NetworkManager.Singleton.OnClientConnectedCallback -= HandleClientConnected;
+                NetworkManager.Singleton.OnClientDisconnectCallback -= HandleClientDisconnected;
+            }
+        }
+        if (IsServer && NetworkManager.SceneManager != null)
+        {
+            NetworkManager.SceneManager.OnLoadEventCompleted -= OnSceneReloaded;
+        }
+        base.OnNetworkDespawn();
+    }
+    #endregion
+
+    #region Game Loop (Update & State)
     private void Update()
     {
-        //contador
         if (partidalista && !timerInitialized)
         {
             if (StartPanel.activeSelf)
@@ -169,253 +211,360 @@ public class GameManager : NetworkBehaviour
                 timerInitialized = true;
             }
         }
+
         if (IsServer)
         {
-            if (NetworkManager.Singleton.ConnectedClients.Count < 2 && partidalista)
+            //HandleGameModeToggles();
+            UpdateTimer();
+            CheckEndGameConditions();
+        }
+        else // Cliente
+        {
+            if (timerRunning && gameMode == GameMode.Tiempo)
             {
-                ShowErrorPanelClientRpc();
+                UIManager.Instance?.UpdateTimerDisplay(syncedTime.Value);
             }
+        }
+    }
 
-            if (T_Moneda.isOn)
+    private void HandleGameModeToggles()
+    {
+        if (T_Moneda.isOn)
+        {
+            if (gameMode != GameMode.Monedas)
             {
                 gameMode = GameMode.Monedas;
                 TellModeClientRpc(gameMode);
             }
-            if (T_Tiempo.isOn)
+        }
+        else if (T_Tiempo.isOn) // Usar else if para evitar llamadas RPC innecesarias
+        {
+            if (gameMode != GameMode.Tiempo)
             {
                 gameMode = GameMode.Tiempo;
                 TellModeClientRpc(gameMode);
             }
-            //contador
-            if (timerRunning && gameMode == GameMode.Tiempo)
+        }
+    }
+
+    private void UpdateTimer()
+    {
+        if (timerRunning && gameMode == GameMode.Tiempo)
+        {
+            timeRemaining -= Time.deltaTime;
+            if (timeRemaining < 0f) timeRemaining = 0f;
+            syncedTime.Value = timeRemaining;
+
+            if (timeRemaining <= 0f)
             {
-                timeRemaining -= Time.deltaTime;
-
-                if (timeRemaining < 0f) timeRemaining = 0f;
-
-                syncedTime.Value = timeRemaining; // esto sincroniza a los clientes
-                //Debug.Log("[GameManager] Temporizador corriendo: " + timeRemaining);
-
-                if (timeRemaining <= 0f)
-                {
-                    timerRunning = false;
-                    Debug.Log("[GameManager] Tiempo agotado, ganan los humanos!");
-                    // --- MODIFICACIÓN: Llamamos a un nuevo RPC para manejar el fin de juego por tiempo
-                    EndGameTimerClientRpc("Human", "Tiempo");
-                }
+                timerRunning = false;
+                Debug.Log("[GameManager] Tiempo agotado, ganan los humanos!");
+                EndGameTimerClientRpc("Human", "Tiempo");
             }
-            // Comprobamos si quedan humanos vivos
-            int humanosVivos = 0;
+        }
+    }
 
-            foreach (var kvp in playerRoles)
+    private void CheckEndGameConditions()
+    {
+        // Condición 1: No quedan humanos
+        int humanosVivos = playerRoles.Count(kvp => !kvp.Value);
+        if (partidalista && humanosVivos == 0 && NetworkManager.Singleton.ConnectedClients.Count > 1)
+        {
+            Debug.Log("[GameManager] No quedan humanos vivos, fin de partida. Ganan los zombis.");
+            EndGameZombieWinClientRpc("Zombie", "DaIgual");
+        }
+
+        // Condición 2: Se consiguen las monedas
+        if (gameMode == GameMode.Monedas)
+        {
+            var coinManagerInstance = GetCoinManagerInstance();
+            if (coinManagerInstance != null && coinManagerInstance.globalCoins.Value >= 10)
             {
-                if (!kvp.Value) // false significa que es humano
-                {
-                    humanosVivos++;
-                }
+                EndGameCoinsClientRpc("Human", "Monedas");
             }
-
-            if (humanosVivos == 0 && partidalista && NetworkManager.Singleton.ConnectedClients.Count > 1)
-            {
-                Debug.Log("[GameManager] No quedan humanos vivos, fin de partida. Ganan los zombis.");
-                // --- MODIFICACIÓN: Llamamos a un nuevo RPC para manejar el fin de juego por zombies
-                EndGameZombieWinClientRpc("Zombie", "DaIgual");
-            }
-
         }
-        var coinManager = GetCoinManagerInstance();
-        if (coinManager != null && coinManager.globalCoins.Value >= 10)
+
+        // Condición 3: Un jugador se desconecta
+        if (NetworkManager.Singleton.ConnectedClients.Count < 2 && partidalista)
         {
-            // --- MODIFICACIÓN: Llamamos a un nuevo RPC para manejar el fin de juego por monedas
-            EndGameCoinsClientRpc("Human", "Monedas");
-        }
-        //contador
-        // El cliente solo actualiza su propia UI, no la lógica de fin de juego
-        if (!IsServer && timerRunning && gameMode == GameMode.Tiempo)
-        {
-            timeRemaining = syncedTime.Value; // El cliente toma el tiempo sincronizado del servidor
-            UIManager.Instance?.UpdateTimerDisplay(timeRemaining);
+            ShowErrorPanelClientRpc();
         }
     }
-    //contador
-    public NetworkVariable<float> GetSyncedTime()
+    #endregion
+
+    #region Player Connection & Spawning
+    private void HandleClientConnected(ulong clientId)
     {
-        return syncedTime;
+        StartCoroutine(SpawnPlayerWithDelay(clientId));
     }
 
-    // --- Función original EndGame, ahora solo llamada por los ClientRpc
-    public void EndGame(string winnerTeam, string gameMode, bool localPlayerIsZombie)
+    private IEnumerator SpawnPlayerWithDelay(ulong clientId)
     {
-        string resultMessage = "";
+        yield return new WaitForSeconds(1.0f);
+        Debug.Log($"[GameManager] Cliente conectado y nivel listo para spawn: {clientId}");
 
-        if (winnerTeam == "Human" && gameMode == "Monedas")
-        {
-            resultMessage = localPlayerIsZombie
-                ? "Has perdido... los humanos han recolectado todas las monedas."
-                : "¡Ganaste! Los humanos habéis recolectado todas las monedas.";
-        }
-        else if (winnerTeam == "Human" && gameMode == "Tiempo")
-        {
-            resultMessage = localPlayerIsZombie
-                ? "Has perdido... se te ha acabado el tiempo y los humanos han sobrevivido."
-                : "¡Ganaste! Los humanos habéis sobrevivido.";
-        }
-        else if (winnerTeam == "Zombie" && gameMode == "DaIgual")
-        {
-            resultMessage = localPlayerIsZombie
-                ? "¡Ganaste! Los zombis habéis atrapado a todos los humanos."
-                : "Has perdido... los zombis os han atrapado a todos.";
-        }
+        bool isZombie = !AsignarRol(clientId); // AsignarRol devuelve isHuman
+        Vector3 spawnPosition = ObtenerPuntoDeSpawn(isZombie);
+        GameObject prefab = isZombie ? zombiePrefab : playerPrefab;
 
-        endGamePanel.ShowEndGamePanel(resultMessage);
+        GameObject instancia = Instantiate(prefab, spawnPosition, Quaternion.identity);
+        NetworkObject netObj = instancia.GetComponent<NetworkObject>();
+        netObj.SpawnAsPlayerObject(clientId);
+
+        // ----> AÑADIDO: Guardamos el NetworkObject del jugador en nuestra lista.
+        spawnedNetworkObjects.Add(netObj);
+
+        PlayerController pc = instancia.GetComponent<PlayerController>();
+        if (pc != null)
+        {
+            pc.IsZombieNetVar.Value = isZombie;
+            UpdatePlayerRoleClientRpc(clientId, isZombie);
+            Debug.Log($"[GameManager] Jugador {clientId} instanciado como {(isZombie ? "Zombi" : "Humano")}.");
+        }
     }
 
-    // Estos RPCs finales ahora obtendrán el rol local del diccionario playerRoles,
-    // que se ha actualizado en todos los clientes gracias a UpdatePlayerRoleClientRpc.
-    [ClientRpc]
-    public void EndGameTimerClientRpc(string winnerTeam, string gameMode)
+    private void HandleClientDisconnected(ulong clientId)
     {
-        ulong localId = NetworkManager.Singleton.LocalClientId;
-        bool localPlayerIsZombie = playerRoles.ContainsKey(localId) && playerRoles[localId];
-        Debug.Log($"[GameManager Client] Cliente {localId}: WinnerTeam = {winnerTeam}, GameMode = {gameMode}, Mi rol (playerRoles) = {localPlayerIsZombie}"); // Mantén este log para verificar
-        EndGame(winnerTeam, gameMode, localPlayerIsZombie);
+        Debug.Log($"[GameManager] Cliente desconectado: {clientId}");
+        if (playerRoles.ContainsKey(clientId))
+        {
+            playerRoles.Remove(clientId);
+        }
+        RemovePlayerRoleClientRpc(clientId);
+        UIManager.Instance?.ForceRefreshCounts();
     }
+
+    private void OnSceneReloaded(string sceneName, LoadSceneMode loadSceneMode, List<ulong> clientsCompleted, List<ulong> clientsTimedOut)
+    {
+        Debug.Log("[GameManager] Escena recargada en todos los clientes. Respawneando jugadores.");
+        DesactivarBotonesClientRpc();
+        foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
+        {
+            StartCoroutine(SpawnPlayerWithDelay(client.ClientId));
+        }
+    }
+    #endregion
 
     [ClientRpc]
-    public void EndGameCoinsClientRpc(string winnerTeam, string gameMode)
-    {
-        ulong localId = NetworkManager.Singleton.LocalClientId;
-        bool localPlayerIsZombie = playerRoles.ContainsKey(localId) && playerRoles[localId];
-        Debug.Log($"[GameManager Client] Cliente {localId}: WinnerTeam = {winnerTeam}, GameMode = {gameMode}, Mi rol (playerRoles) = {localPlayerIsZombie}"); // Mantén este log para verificar
-        EndGame(winnerTeam, gameMode, localPlayerIsZombie);
-    }
-
-
-    [ClientRpc]
-    public void EndGameZombieWinClientRpc(string winnerTeam, string gameMode)
-    {
-        ulong localId = NetworkManager.Singleton.LocalClientId;
-        bool localPlayerIsZombie = playerRoles.ContainsKey(localId) && playerRoles[localId];
-        Debug.Log($"[GameManager Client] Cliente {localId}: WinnerTeam = {winnerTeam}, GameMode = {gameMode}, Mi rol (playerRoles) = {localPlayerIsZombie}"); // Mantén este log para verificar
-        EndGame(winnerTeam, gameMode, localPlayerIsZombie);
-    }
-
-    // --- RPC NUEVO E IMPORTANTE para actualizar el diccionario playerRoles en todos los clientes ---
-    // Este es el RPC CRÍTICO para asegurar la sincronización del rol en TODOS los clientes.
-    [ClientRpc]
-    public void UpdatePlayerRoleClientRpc(ulong clientId, bool isZombie)
-    {
-        Debug.Log($"[GameManager ClientRpc] Actualizando rol para el cliente {clientId}: isZombie = {isZombie}");
-        playerRoles[clientId] = isZombie; // Esto actualiza el diccionario estático en TODOS los clientes
-        UIManager.Instance?.ForceRefreshCounts(); // Si tienes UI que muestre el conteo de roles, fuerza su actualización
-    }
-
-
-    [ClientRpc]
-    private void ShowErrorPanelClientRpc()
-    {
-        if (ErrorPanel != null)
-        {
-            ErrorPanel.SetActive(true);
-        }
-    }
-
-
-    [ClientRpc]
-    public void DesactivarUIClientRpc()
+    public void DesactivarBotonesClientRpc()
     {
         botonesActivos = false;
     }
-    private CoinManager GetCoinManagerInstance()
+    
+    #region Lobby & Ready System
+    // ----> REEMPLAZO COMPLETO: Esta función ahora asegura que el botón de listo sea interactuable.
+    private void ConfigureLobbyUI()
     {
-        if (CoinManager.instance != null)
-            return CoinManager.instance;
-
-        return FindObjectOfType<CoinManager>();
-    }
-
-    [ClientRpc]
-    private void TellModeClientRpc(GameMode gameMode_)
-    {
-        gameMode = gameMode_;
-    }
-
-    public override void OnNetworkSpawn()
-    {
-        if (IsServer)
+        if (IsHost)
         {
-            playerRoles.Clear();
-            seed = Random.Range(int.MinValue, int.MaxValue);
-            Debug.Log("[GameManager] OnNetworkSpawn() en servidor.");
-            if (levelBuilder == null)
+            readyButton.gameObject.SetActive(false);
+            startGameButton.gameObject.SetActive(true);
+            readyCountText.gameObject.SetActive(true);
+            // Limpiamos listeners viejos antes de añadir uno nuevo para evitar duplicados.
+            startGameButton.onClick.RemoveAllListeners();
+            startGameButton.onClick.AddListener(TellServerToStartGame);
+            UpdateHostLobbyUI();
+        }
+        else // Es un cliente
+        {
+            readyButton.gameObject.SetActive(true);
+            startGameButton.gameObject.SetActive(false);
+            readyCountText.gameObject.SetActive(false);
+            // Limpiamos listeners viejos.
+            readyButton.onClick.RemoveAllListeners();
+            readyButton.onClick.AddListener(AvisarServerJugadorListo_out);
+            // ----> CORRECCIÓN CLAVE: Aseguramos que el botón sea usable al (re)iniciar.
+            readyButton.interactable = true;
+        }
+    }
+
+    public void AvisarServerJugadorListo_out()
+    {
+        string chosenName = nameInputField.text;
+        var localPlayerController = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerController>();
+        if (localPlayerController != null)
+        {
+            localPlayerController.SetPlayerNameServerRpc(chosenName);
+        }
+        PlayerClickedReadyServerRpc();
+        readyButton.interactable = false;
+    }
+
+    private void OnReadyCountChanged(int previousValue, int newValue)
+    {
+        if (IsHost)
+        {
+            UpdateHostLobbyUI();
+        }
+    }
+
+    private void UpdateHostLobbyUI()
+    {
+        if (!IsHost) return;
+        int totalPlayers = NetworkManager.Singleton.ConnectedClients.Count;
+        readyCountText.text = $"Listos: {readyPlayerCount.Value} / {totalPlayers}";
+        bool todosListos = (readyPlayerCount.Value == totalPlayers);
+        startGameButton.interactable = (readyPlayerCount.Value >= 2 && todosListos);
+    }
+
+    private void TellServerToStartGame()
+    {
+        string hostName = nameInputField.text;
+        if (string.IsNullOrEmpty(hostName)) hostName = "Host";
+        var localPlayerController = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerController>();
+        if (localPlayerController != null)
+        {
+            localPlayerController.SetPlayerNameServerRpc(hostName);
+        }
+        TellServerToStartGameServerRpc();
+    }
+    #endregion
+
+    #region Restart Logic
+    // ----> REEMPLAZO COMPLETO: Nueva función de reinicio, mucho más robusta.
+    [ServerRpc(RequireOwnership = false)]
+    public void ReiniciarPartidaServerRpc()
+    {
+        Debug.Log("[GameManager] Petición de reinicio recibida en el servidor.");
+
+        // 1. Limpiar TODOS los objetos de red instanciados
+        Debug.Log($"[GameManager] Despawneando {spawnedNetworkObjects.Count} objetos de red.");
+        foreach (var netObj in spawnedNetworkObjects)
+        {
+            if (netObj != null && netObj.IsSpawned)
             {
-                Debug.LogError("LevelBuilder no está asignado.");
-                return;
+                netObj.Despawn(true); // El 'true' destruye el objeto en todos los clientes.
             }
+        }
+        spawnedNetworkObjects.Clear(); // Limpiamos la lista para la siguiente partida.
 
-            levelBuilder.Build(seed);
-            //humanSpawnPoints = levelBuilder.GetHumanSpawnPoints();
-            //zombieSpawnPoints = levelBuilder.GetZombieSpawnPoints();
+        // 2. Resetear el estado de la partida en el servidor
+        partidalista = false;
+        timerRunning = false;
+        timerInitialized = false;
+        playerRoles.Clear();
+        clientsReady.Clear();
+        readyPlayerCount.Value = 1; // Reseteamos el contador (el host cuenta como 1 por defecto)
 
-            InformClientsToBuildLevelClientRpc(seed);
+        // 3. Informar a TODOS los clientes que deben resetear su UI del lobby
+        ResetLobbyUIClientRpc();
 
+        // 4. Recargar la escena. Esto reconstruirá la escena y llamará a OnSceneReloaded cuando esté lista.
+        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        NetworkManager.Singleton.SceneManager.LoadScene(sceneName, LoadSceneMode.Single);
+    }
+
+    // ----> NUEVA FUNCIÓN: RPC para que los clientes reseteen su UI.
+    [ClientRpc]
+    private void ResetLobbyUIClientRpc()
+    {
+        Debug.Log($"[Client {NetworkManager.Singleton.LocalClientId}] Recibida orden de resetear UI del Lobby.");
+        if (StartPanel != null) StartPanel.SetActive(true);
+        if (endGamePanel != null) endGamePanel.gameObject.SetActive(false);
+
+        // Si no somos el host, reactivamos nuestro botón de "listo".
+        if (!IsHost && readyButton != null)
+        {
+            readyButton.interactable = true;
+        }
+    }
+    #endregion
+
+    #region Server RPCs
+    [ServerRpc(RequireOwnership = false)]
+    private void PlayerClickedReadyServerRpc(ServerRpcParams rpcParams = default)
+    {
+        var clientId = rpcParams.Receive.SenderClientId;
+
+        // Si este cliente NO estaba ya en la lista de listos...
+        if (!clientsReady.Contains(clientId))
+        {
+            // Lo añadimos
+            clientsReady.Add(clientId);
+
+            // Y AHORA actualizamos el contador.
+            // Será 1 (el host) + el número de clientes que han pulsado el botón.
+            readyPlayerCount.Value = 1 + clientsReady.Count;
+
+            Debug.Log($"[GameManager] Cliente {clientId} ha marcado listo. Total listos: {readyPlayerCount.Value}");
+        }
+        else
+        {
+            Debug.LogWarning($"[GameManager] Cliente {clientId} ha intentado marcar listo de nuevo.");
+        }
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void TellServerToStartGameServerRpc()
+    {
+        // Primero, asignamos el modo de juego oficial basado en los toggles.
+        if (T_Moneda.isOn)
+        {
+            gameMode = GameMode.Monedas;
+        }
+        else // Si no es moneda, asumimos que es tiempo (o cualquier otro modo por defecto)
+        {
+            gameMode = GameMode.Tiempo;
+        }
+
+        // AHORA que 'gameMode' está 100% actualizado, lo comunicamos a los clientes.
+        TellModeClientRpc(gameMode);
+        Debug.Log($"[GameManager] Partida iniciada oficialmente en modo: {gameMode}");
+
+        // Y DESPUÉS, actuamos en consecuencia.
+        if (gameMode == GameMode.Monedas)
+        {
+            Debug.Log("[GameManager] Creando CoinManager para el modo Monedas...");
             if (coinManagerPrefab != null)
             {
                 GameObject coinObj = Instantiate(coinManagerPrefab);
                 NetworkObject netObj = coinObj.GetComponent<NetworkObject>();
                 netObj.Spawn();
+                RegisterSpawnedObject(netObj);
 
-                Debug.Log($"[GameManager] CoinManager instanciado y spawneado: {netObj.NetworkObjectId}");
+                CoinManager cm = coinObj.GetComponent<CoinManager>();
+                if(cm != null)
+                {
+                    cm.ResetCoinServerRpc();
+                }
             }
-
-            ModeSelect.SetActive(true);
-            /*
-            NetworkManager.Singleton.OnClientConnectedCallback += HandleClientConnected;
-            NetworkManager.Singleton.OnClientDisconnectCallback += HandleClientDisconnected;
-            */
         }
-        else
+        if (gameMode == GameMode.Tiempo)
         {
-            Debug.Log("[GameManager] OnNetworkSpawn() en cliente.");
-            ModeSelect.SetActive(false);
-            RequestBuildLevelServerRpc();
+            SetActiveFalseCoinsClientRpc();
         }
-        ConfigureLobbyUI(); // Configura la UI del lobby al spawnear
-        readyPlayerCount.OnValueChanged += OnReadyCountChanged; // Nos suscribimos a los cambios
+        // Si es modo Tiempo, simplemente no hace nada, que es lo correcto.
 
-        // Si somos el host, también necesitamos actualizar la UI cuando un jugador se conecta o desconecta
-        if (IsHost)
-        {
-            NetworkManager.Singleton.OnClientConnectedCallback += (id) => UpdateHostLobbyUI();
-            NetworkManager.Singleton.OnClientDisconnectCallback += (id) => {
-                // Si un jugador se desconecta, recalculamos los listos. 
-                // (Una lógica más avanzada podría descontar si el que se fue estaba listo)
-                // Por ahora, solo actualizamos el total.
-                UpdateHostLobbyUI();
-            };
-        }
-
+        // El resto de la función se queda igual.
+        partidalista = true;
+        StartGameClientRpc();
     }
-
-    // IMPORTANTE: Asegúrate de desuscribirte de los eventos en OnNetworkDespawn
-    public override void OnNetworkDespawn()
+    [ClientRpc]
+    public void SetActiveFalseCoinsClientRpc()
     {
-        if (IsServer)
+        GameObject[] coinsInScene = GameObject.FindGameObjectsWithTag("Moneda");
+        if (coinsInScene.Length > 0)
         {
-            if (NetworkManager.Singleton != null) // Asegúrate de que el Singleton no sea nulo al desuscribirte
+            foreach (GameObject coin in coinsInScene)
             {
-                NetworkManager.Singleton.OnClientConnectedCallback -= HandleClientConnected;
-                NetworkManager.Singleton.OnClientDisconnectCallback -= HandleClientDisconnected;
+                coin.SetActive(false);
             }
         }
-        base.OnNetworkDespawn();
     }
-
     [ServerRpc(RequireOwnership = false)]
     public void RequestBuildLevelServerRpc()
     {
         Debug.Log("Cliente ha solicitado construir el nivel.");
         InformClientsToBuildLevelClientRpc(seed);
+    }
+    #endregion
+
+    #region Client RPCs
+    [ClientRpc]
+    private void StartGameClientRpc()
+    {
+        Debug.Log("¡La partida comienza!");
+        StartPanel.SetActive(false);
     }
 
     [ClientRpc]
@@ -428,265 +577,189 @@ public class GameManager : NetworkBehaviour
         }
     }
 
-    private void HandleClientConnected(ulong clientId)
+    [ClientRpc]
+    private void TellModeClientRpc(GameMode gameMode_)
     {
-        // Ya no spawneamos directamente aquí, ahora llamamos a una corrutina que lo hará.
-        StartCoroutine(SpawnPlayerWithDelay(clientId));
-    }
-    private IEnumerator SpawnPlayerWithDelay(ulong clientId)
-    {
-        // ESPERA UN SEGUNDO. Esto le da tiempo de sobra al LevelBuilder del cliente
-        // para recibir el RPC del servidor y construir el nivel antes de que aparezca el jugador.
-        yield return new WaitForSeconds(1.0f);
-
-        Debug.Log($"[GameManager] Cliente conectado y nivel listo: {clientId}");
-
-        bool isHuman = AsignarRol(clientId);
-        Vector3 spawnPosition = ObtenerPuntoDeSpawn(isHuman); // Esto usará tu lógica de spawn ordenado
-        GameObject prefab = isHuman ? playerPrefab : zombiePrefab;
-
-        GameObject instancia = Instantiate(prefab, spawnPosition, Quaternion.identity);
-
-        NetworkObject netObj = instancia.GetComponent<NetworkObject>();
-        netObj.SpawnAsPlayerObject(clientId);
-
-        // El resto de la lógica de asignación de rol se queda igual
-        PlayerController pc = instancia.GetComponent<PlayerController>();
-        if (pc != null)
-        {
-            pc.IsZombieNetVar.Value = !isHuman;
-            UpdatePlayerRoleClientRpc(clientId, !isHuman);
-            Debug.Log($"[GameManager] Jugador {clientId} {(isHuman ? "Humano" : "Zombi")} instanciado en {spawnPosition}.");
-        }
-        else
-        {
-            Debug.LogError($"[GameManager] El prefab para el cliente {clientId} no tiene un PlayerController.");
-        }
+        gameMode = gameMode_;
     }
 
-    private void HandleClientDisconnected(ulong clientId)
+    [ClientRpc]
+    public void UpdatePlayerRoleClientRpc(ulong clientId, bool isZombie)
     {
-        Debug.Log($"[GameManager] Cliente desconectado: {clientId}");
-
-        // Elimina al jugador del diccionario de roles
-        if (playerRoles.ContainsKey(clientId))
-        {
-            playerRoles.Remove(clientId);
-            Debug.Log($"[GameManager] Rol eliminado para cliente {clientId}");
-        }
-        // ¡Importante! Llama a este ClientRpc para que TODOS los clientes
-        // también eliminen al jugador de su diccionario playerRoles.
-        RemovePlayerRoleClientRpc(clientId);
-
+        Debug.Log($"[GameManager ClientRpc] Actualizando rol para el cliente {clientId}: isZombie = {isZombie}");
+        playerRoles[clientId] = isZombie;
         UIManager.Instance?.ForceRefreshCounts();
     }
 
-    // Añade este nuevo ClientRpc para eliminar un rol en todos los clientes cuando un jugador se desconecta
     [ClientRpc]
     public void RemovePlayerRoleClientRpc(ulong clientId)
     {
         if (playerRoles.ContainsKey(clientId))
         {
             playerRoles.Remove(clientId);
-            Debug.Log($"[GameManager ClientRpc] Rol eliminado para cliente {clientId} en el cliente.");
+            Debug.Log($"[GameManager ClientRpc] Rol eliminado para cliente {clientId} en este cliente.");
         }
-        UIManager.Instance?.ForceRefreshCounts(); // Asegúrate de refrescar la UI
+        UIManager.Instance?.ForceRefreshCounts();
     }
 
-    public void AvisarServerJugadorListo_out()
+    [ClientRpc]
+    private void ShowErrorPanelClientRpc()
     {
-        // 1. Lógica del nombre (se queda igual)
-        string chosenName = nameInputField.text;
-        var localPlayerController = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerController>();
-        if (localPlayerController != null)
+        if (ErrorPanel != null)
         {
-            localPlayerController.SetPlayerNameServerRpc(chosenName);
+            ErrorPanel.SetActive(true);
         }
+    }
+    #endregion
 
-        // 2. Avisamos al servidor que estamos listos
-        PlayerClickedReadyServerRpc();
-
-        // 3. Desactivamos el botón para no poder pulsarlo más
-        readyButton.interactable = false;
+    #region End Game
+    public void EndGame(string winnerTeam, string reason)
+    {
+        // Tu lógica de EndGame...
     }
 
-    // EN GameManager.cs
-    [ServerRpc(RequireOwnership = false)]
-    private void PlayerClickedReadyServerRpc()
+    [ClientRpc]
+    public void EndGameTimerClientRpc(string winnerTeam, string gameMode)
     {
-        // El servidor simplemente incrementa el contador.
-        readyPlayerCount.Value++;
+        ulong localId = NetworkManager.Singleton.LocalClientId;
+        bool localPlayerIsZombie = playerRoles.ContainsKey(localId) && playerRoles[localId];
+        EndGame(winnerTeam, gameMode, localPlayerIsZombie);
+    }
+
+    [ClientRpc]
+    public void EndGameCoinsClientRpc(string winnerTeam, string gameMode)
+    {
+        ulong localId = NetworkManager.Singleton.LocalClientId;
+        bool localPlayerIsZombie = playerRoles.ContainsKey(localId) && playerRoles[localId];
+        EndGame(winnerTeam, gameMode, localPlayerIsZombie);
+    }
+
+    [ClientRpc]
+    public void EndGameZombieWinClientRpc(string winnerTeam, string gameMode)
+    {
+        ulong localId = NetworkManager.Singleton.LocalClientId;
+        bool localPlayerIsZombie = playerRoles.ContainsKey(localId) && playerRoles[localId];
+        EndGame(winnerTeam, gameMode, localPlayerIsZombie);
+    }
+
+    // Esta es una versión simplificada de tu EndGame, ajústala a tu panel.
+    public void EndGame(string winnerTeam, string gameMode, bool localPlayerIsZombie)
+    {
+        string resultMessage = ""; // Empezamos con un string vacío
+
+        // --- Esta es tu lógica original, que funciona perfectamente ---
+
+        // Condición 1: Ganan los humanos por monedas
+        if (winnerTeam == "Human" && gameMode == "Monedas")
+        {
+            resultMessage = localPlayerIsZombie
+                ? "Has perdido... los humanos han recolectado todas las monedas."
+                : "¡Ganaste! Habéis recolectado todas las monedas.";
+        }
+        // Condición 2: Ganan los humanos por tiempo
+        else if (winnerTeam == "Human" && gameMode == "Tiempo")
+        {
+            resultMessage = localPlayerIsZombie
+                ? "Has perdido... se ha acabado el tiempo y los humanos han sobrevivido."
+                : "¡Ganaste! Habéis sobrevivido.";
+        }
+        // Condición 3: Ganan los zombis porque no quedan humanos
+        else if (winnerTeam == "Zombie" && gameMode == "DaIgual")
+        {
+            resultMessage = localPlayerIsZombie
+                ? "¡Ganaste! Habéis atrapado a todos los humanos."
+                : "Has perdido... los zombis os han atrapado a todos.";
+        }
+        else
+        {
+            // Mensaje por si ocurre una condición inesperada
+            resultMessage = "La partida ha terminado.";
+        }
+
+        // Finalmente, mostramos el panel con el mensaje correcto
+        if (endGamePanel != null)
+        {
+            endGamePanel.ShowEndGamePanel(resultMessage);
+        }
+        else
+        {
+            Debug.LogError("EndGamePanel no está asignado en el GameManager.");
+        }
+    }
+
+    public void RegisterSpawnedObject(NetworkObject newObject)
+    {
+        if (IsServer)
+        {
+            spawnedNetworkObjects.Add(newObject);
+            Debug.Log($"[GameManager] Objeto '{newObject.name}' registrado para limpieza. Total en lista: {spawnedNetworkObjects.Count}");
+        }
+    }
+    #endregion
+
+    #region Utility & Role Assignment
+    private CoinManager GetCoinManagerInstance()
+    {
+        return FindObjectOfType<CoinManager>();
     }
 
     public bool AsignarRol(ulong clientId)
     {
-        int totalZombies = 0;
-        int totalHumanos = 0;
+        int totalZombies = playerRoles.Count(kvp => kvp.Value);
+        int totalHumanos = playerRoles.Count - totalZombies;
 
-        // Contamos los roles actuales. Esta parte estaba bien.
-        foreach (var rol in playerRoles.Values)
-        {
-            if (rol) totalZombies++; // true es zombi
-            else totalHumanos++;    // false es humano
-        }
-
-        // Determinar el rol preferido para mantener el equilibrio
-        // Si Z <= H, queremos un Zombi para igualar. Si no (Z > H), queremos un Humano.
         bool preferirHumano = (totalZombies > totalHumanos);
 
-        // --- Lógica de Asignación Simplificada ---
-
-        if (preferirHumano)
+        if (preferirHumano && totalHumanos < maxHumans)
         {
-            // Se prefieren humanos porque ya hay más zombis.
-            if (totalHumanos < maxHumans)
-            {
-                playerRoles[clientId] = false; // Asignar Humano
-                Debug.Log($"Jugador {clientId} asignado como HUMANO (Regla: Z > H). Equipos: {totalHumanos + 1}H/{totalZombies}Z");
-                return true; // isHuman = true
-            }
-        }
-        else // Se prefieren zombis (porque Zombis <= Humanos)
-        {
-            if (totalZombies < maxZombies)
-            {
-                playerRoles[clientId] = true; // Asignar Zombi
-                Debug.Log($"Jugador {clientId} asignado como ZOMBI (Regla: Z <= H). Equipos: {totalHumanos}H/{totalZombies + 1}Z");
-                return false; // isHuman = false
-            }
-        }
-
-        // --- Fallback: El equipo preferido estaba lleno, intentamos con el otro ---
-        Debug.LogWarning("El equipo preferido estaba lleno. Intentando asignar al equipo alternativo.");
-
-        if (totalHumanos < maxHumans) // ¿Hay hueco para un humano como segunda opción?
-        {
-            playerRoles[clientId] = false;
-            Debug.Log($"Jugador {clientId} asignado como HUMANO (Fallback). Equipos: {totalHumanos + 1}H/{totalZombies}Z");
+            playerRoles[clientId] = false; // Humano
             return true;
         }
-        else if (totalZombies < maxZombies) // ¿Hay hueco para un zombi como segunda opción?
+        else if (!preferirHumano && totalZombies < maxZombies)
         {
-            playerRoles[clientId] = true;
-            Debug.Log($"Jugador {clientId} asignado como ZOMBI (Fallback). Equipos: {totalHumanos}H/{totalZombies + 1}Z");
+            playerRoles[clientId] = true; // Zombi
             return false;
         }
 
-        // Si llegamos aquí, es que el juego está completamente lleno.
-        Debug.LogError($"No se pudo asignar rol para {clientId}. El juego está lleno. Desconectando jugador (o manejar de otra forma).");
-        // Aquí podrías desconectar al cliente porque no hay sitio. Por ahora, lo asignamos como humano.
-        playerRoles[clientId] = false;
+        // Fallback si el equipo preferido está lleno
+        if (totalHumanos < maxHumans)
+        {
+            playerRoles[clientId] = false; // Humano
+            return true;
+        }
+        else if (totalZombies < maxZombies)
+        {
+            playerRoles[clientId] = true; // Zombi
+            return false;
+        }
+
+        Debug.LogError($"No se pudo asignar rol a {clientId}, juego lleno.");
+        playerRoles[clientId] = false; // Default a humano si todo falla
         return true;
     }
 
-    private Vector3 ObtenerPuntoDeSpawn(bool isHuman)
+    private Vector3 ObtenerPuntoDeSpawn(bool isZombie)
     {
-        if (isHuman)
+        if (isZombie)
         {
-            int numHumanos = 0;
-            foreach (var rol in playerRoles.Values) { if (!rol) numHumanos++; }
-            int spawnIndex = numHumanos - 1;
-
-            if (spawnIndex >= 0 && spawnIndex < humanSpawnPoints.Count)
-            {
-                // Devolvemos la posición del Transform en la lista
-                return humanSpawnPoints[spawnIndex].position;
-            }
-            // Fallback por si algo sale mal
-            return new Vector3(13, 1, 13);
-        }
-        else // Es Zombi
-        {
-            int numZombis = 0;
-            foreach (var rol in playerRoles.Values) { if (rol) numZombis++; }
-            int spawnIndex = numZombis - 1;
-
+            int numZombis = playerRoles.Count(kvp => kvp.Value);
+            int spawnIndex = (numZombis - 1) % zombieSpawnPoints.Count;
             if (spawnIndex >= 0 && spawnIndex < zombieSpawnPoints.Count)
             {
-                // Devolvemos la posición del Transform en la lista
                 return zombieSpawnPoints[spawnIndex].position;
             }
-            // Fallback por si algo sale mal
-            return new Vector3(4, 1, 13);
         }
-    }
-
-    // EN GameManager.cs
-    private void ConfigureLobbyUI()
-    {
-        if (IsHost)
+        else // Es Humano
         {
-            readyButton.gameObject.SetActive(false);
-            startGameButton.gameObject.SetActive(true);
-            readyCountText.gameObject.SetActive(true);
-            startGameButton.onClick.AddListener(TellServerToStartGame);
-            UpdateHostLobbyUI(); // Actualizamos la UI del host por primera vez
+            int numHumanos = playerRoles.Count(kvp => !kvp.Value);
+            int spawnIndex = (numHumanos - 1) % humanSpawnPoints.Count;
+            if (spawnIndex >= 0 && spawnIndex < humanSpawnPoints.Count)
+            {
+                return humanSpawnPoints[spawnIndex].position;
+            }
         }
-        else // Es un cliente
-        {
-            readyButton.gameObject.SetActive(true);
-            startGameButton.gameObject.SetActive(false);
-            readyCountText.gameObject.SetActive(false);
-        }
+        // Fallback por si algo sale mal
+        return new Vector3(0, 5, 0);
     }
-    // EN GameManager.cs
-    private void UpdateHostLobbyUI()
-    {
-        if (!IsHost) return;
-
-        int totalPlayers = NetworkManager.Singleton.ConnectedClients.Count;
-        readyCountText.text = $"Listos: {readyPlayerCount.Value} / {totalPlayers}";
-
-        // El host puede empezar si hay al menos 2 jugadores listos y todos los que están conectados están listos.
-        bool todosLosConectadosEstanListos = (readyPlayerCount.Value == totalPlayers);
-        startGameButton.interactable = (readyPlayerCount.Value >= 2 && todosLosConectadosEstanListos);
-    }
-
-    private void OnReadyCountChanged(int previousValue, int newValue)
-    {
-        // El host actualiza su UI cuando el contador cambia
-        if (IsHost)
-        {
-            UpdateHostLobbyUI();
-        }
-    }
-
-    private void TellServerToStartGame()
-    {
-        // 1. Validar y obtener el nombre del Host desde el InputField.
-        string hostName = "Host Anónimo"; // Nombre por defecto por si está vacío.
-        if (nameInputField != null && !string.IsNullOrEmpty(nameInputField.text))
-        {
-            hostName = nameInputField.text;
-        }
-
-        // 2. Obtener el PlayerController del Host (que es el jugador local en esta máquina).
-        var localPlayerController = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerController>();
-
-        // 3. Llamar al RPC para que el servidor actualice el nombre del Host.
-        if (localPlayerController != null)
-        {
-            localPlayerController.SetPlayerNameServerRpc(hostName);
-        }
-
-        // Este método es llamado por el botón del Host
-        TellServerToStartGameServerRpc();
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    private void TellServerToStartGameServerRpc()
-    {
-        // El servidor recibe la orden y avisa a todos los clientes para que empiecen
-        partidalista = true;
-        StartGameClientRpc();
-    }
-
-    [ClientRpc]
-    private void StartGameClientRpc()
-    {
-        // Todos los clientes (incluido el host) reciben esta llamada
-        Debug.Log("¡La partida comienza!");
-        StartPanel.SetActive(false); // Ocultamos el panel de inicio
-                                     // Aquí puedes añadir más lógica de inicio de partida si es necesario
-    }
+    #endregion
 }

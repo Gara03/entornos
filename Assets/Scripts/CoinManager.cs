@@ -23,10 +23,6 @@ public class CoinManager : NetworkBehaviour
         }
 
     }
-    private void Start()
-    {
-        ResetCoinServerRpc();
-    }
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
