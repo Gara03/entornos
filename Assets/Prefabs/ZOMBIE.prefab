@@ -520,6 +520,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 74c60d8a4cef15c429a607babeda9b66, type: 3}
       insertIndex: -1
       addedObject: {fileID: 3319483115386871160}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 74c60d8a4cef15c429a607babeda9b66, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1492729628895769636}
   m_SourcePrefab: {fileID: 100100000, guid: 74c60d8a4cef15c429a607babeda9b66, type: 3}
 --- !u!4 &8602149270020389342 stripped
 Transform:
@@ -771,3 +774,16 @@ MonoBehaviour:
   InLocalSpace: 0
   Interpolate: 1
   SlerpPosition: 0
+--- !u!114 &1492729628895769636
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8947290730586645348}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e9ed4a094f5c68428bca09ff134234b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  zombiePrefab: {fileID: 8947290730586645348}
