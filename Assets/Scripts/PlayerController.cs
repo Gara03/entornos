@@ -65,6 +65,15 @@ public class PlayerController : NetworkBehaviour
         }
         UpdateCoinUI();
     }
+    // EN PlayerController.cs - MANTÉN ESTE CÓDIGO
+    void LateUpdate()
+    {
+        if (IsOwner)
+        {
+            // Forzamos la rotación en los ejes X y Z a cero
+            transform.rotation = Quaternion.Euler(0, transform.rotation.eulerAngles.y, 0);
+        }
+    }
 
     public override void OnNetworkSpawn()
     {

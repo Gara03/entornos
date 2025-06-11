@@ -78,7 +78,7 @@ public class ZombieCollisionHandler : NetworkBehaviour
         yield return new WaitForSeconds(0.2f);
 
         // Crea una nueva instancia del prefab de zombi
-        GameObject newZombie = Instantiate(zombiePrefab, position, rotation);
+        GameObject newZombie = Instantiate(zombiePrefab, position, Quaternion.identity);
         NetworkObject netObj = newZombie.GetComponent<NetworkObject>();
 
         if (netObj != null)

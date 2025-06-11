@@ -6,6 +6,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Unity.Collections; // Necesario para FixedString
 using System.Runtime.CompilerServices;
+using System.Collections;
 
 public enum GameMode
 {
@@ -330,16 +331,6 @@ public class GameManager : NetworkBehaviour
 
 
     [ClientRpc]
-    public void FinHumanosClientRpc()
-    {
-        SceneManager.LoadScene("HumansWin");
-    }
-    [ClientRpc]
-    public void FinZombiesClientRpc()
-    {
-        SceneManager.LoadScene("ZobiesWin");
-    }
-    [ClientRpc]
     public void DesactivarUIClientRpc()
     {
         botonesActivos = false;
@@ -448,37 +439,37 @@ public class GameManager : NetworkBehaviour
 
     private void HandleClientConnected(ulong clientId)
     {
-        Debug.Log($"[GameManager] Cliente conectado: {clientId}");
+        // Ya no spawneamos directamente aquí, ahora llamamos a una corrutina que lo hará.
+        StartCoroutine(SpawnPlayerWithDelay(clientId));
+    }
+    private IEnumerator SpawnPlayerWithDelay(ulong clientId)
+    {
+        // ESPERA UN SEGUNDO. Esto le da tiempo de sobra al LevelBuilder del cliente
+        // para recibir el RPC del servidor y construir el nivel antes de que aparezca el jugador.
+        yield return new WaitForSeconds(1.0f);
+
+        Debug.Log($"[GameManager] Cliente conectado y nivel listo: {clientId}");
 
         bool isHuman = AsignarRol(clientId);
-        Vector3 spawnPosition = ObtenerPuntoDeSpawn(isHuman);
+        Vector3 spawnPosition = ObtenerPuntoDeSpawn(isHuman); // Esto usará tu lógica de spawn ordenado
         GameObject prefab = isHuman ? playerPrefab : zombiePrefab;
 
-        // Creamos el objeto pero aún no lo spawneamos
         GameObject instancia = Instantiate(prefab, spawnPosition, Quaternion.identity);
 
-        // Spawneamos como PlayerObject (esto asigna ownership y activa IsOwner correctamente)
         NetworkObject netObj = instancia.GetComponent<NetworkObject>();
         netObj.SpawnAsPlayerObject(clientId);
 
-        // Marcar como zombi en el PlayerController
+        // El resto de la lógica de asignación de rol se queda igual
         PlayerController pc = instancia.GetComponent<PlayerController>();
         if (pc != null)
         {
-            // El servidor actualiza el rol en el PlayerController del cliente
-            pc.SetIsZombieClientRpc(!isHuman); // Asegúrate de que PlayerController tiene este RPC
-            pc.isZombie = !isHuman; // Actualiza la variable local del servidor para consistencia
-
-            // **** ¡¡¡LA LÍNEA CRÍTICA QUE FALTABA!!! ****
-            // Llama al ClientRpc para que TODOS los clientes (incluido el zombi original)
-            // actualicen su diccionario GameManager.playerRoles con el rol de este jugador.
-            UpdatePlayerRoleClientRpc(clientId, !isHuman); // !isHuman porque isZombie es true si no es humano
-
-            Debug.Log($"[GameManager] Jugador {clientId} {(isHuman ? "Humano" : "Zombi")} instanciado en {spawnPosition}. Rol sincronizado.");
+            pc.IsZombieNetVar.Value = !isHuman;
+            UpdatePlayerRoleClientRpc(clientId, !isHuman);
+            Debug.Log($"[GameManager] Jugador {clientId} {(isHuman ? "Humano" : "Zombi")} instanciado en {spawnPosition}.");
         }
         else
         {
-            Debug.LogError($"[GameManager] El prefab {(isHuman ? "Human" : "Zombie")} para el cliente {clientId} no tiene un PlayerController.");
+            Debug.LogError($"[GameManager] El prefab para el cliente {clientId} no tiene un PlayerController.");
         }
     }
 
@@ -623,20 +614,30 @@ public class GameManager : NetworkBehaviour
         return false; // Por defecto, si no se cumple ninguna condición previa (debería ser inalcanzable con la lógica de assignedRole)
     }
 
+    // EN GameManager.cs
     private Vector3 ObtenerPuntoDeSpawn(bool isHuman)
     {
-        if (isHuman && humanSpawnPoints.Count > 0)
+        if (isHuman)
         {
-            return humanSpawnPoints[Random.Range(0, humanSpawnPoints.Count)];
+            int numHumanos = 0;
+            foreach (var rol in playerRoles.Values) { if (!rol) numHumanos++; }
+            int spawnIndex = numHumanos - 1; // Índice correcto (0 para el primero, 1 para el segundo...)
+            if (spawnIndex >= 0 && spawnIndex < humanSpawnPoints.Count)
+            {
+                return humanSpawnPoints[spawnIndex];
+            }
+            return humanSpawnPoints.Count > 0 ? humanSpawnPoints[0] : Vector3.zero;
         }
-        else if (!isHuman && zombieSpawnPoints.Count > 0)
+        else // Es Zombi
         {
-            return zombieSpawnPoints[Random.Range(0, zombieSpawnPoints.Count)];
-        }
-        else
-        {
-            Debug.LogWarning("No hay puntos de spawn definidos.");
-            return Vector3.zero;
+            int numZombis = 0;
+            foreach (var rol in playerRoles.Values) { if (rol) numZombis++; }
+            int spawnIndex = numZombis - 1;
+            if (spawnIndex >= 0 && spawnIndex < zombieSpawnPoints.Count)
+            {
+                return zombieSpawnPoints[spawnIndex];
+            }
+            return zombieSpawnPoints.Count > 0 ? zombieSpawnPoints[0] : Vector3.zero;
         }
     }
 }
