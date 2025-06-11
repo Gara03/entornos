@@ -40,10 +40,8 @@ public class GameManager : NetworkBehaviour
     private NetworkVariable<float> syncedTime = new NetworkVariable<float>(0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private bool timerInitialized = false;
 
-    private bool jugador1ready = false;
-    private bool jugador2ready = false;
-    private bool jugador3ready = false;
-    private bool jugador4ready = false;
+    // EN GameManager.cs
+    private NetworkVariable<int> readyPlayerCount = new NetworkVariable<int>(1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private bool partidalista = false;
 
@@ -62,20 +60,18 @@ public class GameManager : NetworkBehaviour
     private int seed;
     public LevelBuilder levelBuilder;
 
-    // --- CAMBIO IMPORTANTE: Usaremos NetworkDictionary para playerRoles si es posible,
-    // --- o una NetworkList y la actualizaremos con RPCs para asegurar la sincronización.
-    // --- Para mantener la estructura actual, vamos a hacer que el servidor envíe el rol.
-    // --- Por ahora, mantenemos el static Dictionary, pero su uso directo en clientes
-    // --- para determinar el rol local es el problema.
-
     public static Dictionary<ulong, bool> playerRoles = new Dictionary<ulong, bool>(); // true = zombie, false = humano
 
+    [Header("Panels")]
     [SerializeField] private EndGamePanelController endGamePanel;
     [SerializeField] private GameObject ErrorPanel;
     [SerializeField] GameObject StartPanel;
 
+    [Header("Lobby UI")]
     [SerializeField] private TMP_InputField nameInputField;
     [SerializeField] private Button readyButton;
+    [SerializeField] private TMP_Text readyCountText;
+    [SerializeField] private Button startGameButton;
 
     [SerializeField] GameObject ModeSelect;
 
@@ -158,12 +154,6 @@ public class GameManager : NetworkBehaviour
 
     private void Update()
     {
-        if (jugador1ready && jugador2ready && jugador3ready && jugador4ready)
-        {
-            partidalista = true;
-            partidalistaClientRpc();
-        }
-
         //contador
         if (partidalista && !timerInitialized)
         {
@@ -390,6 +380,20 @@ public class GameManager : NetworkBehaviour
             ModeSelect.SetActive(false);
             RequestBuildLevelServerRpc();
         }
+        ConfigureLobbyUI(); // Configura la UI del lobby al spawnear
+        readyPlayerCount.OnValueChanged += OnReadyCountChanged; // Nos suscribimos a los cambios
+
+        // Si somos el host, también necesitamos actualizar la UI cuando un jugador se conecta o desconecta
+        if (IsHost)
+        {
+            NetworkManager.Singleton.OnClientConnectedCallback += (id) => UpdateHostLobbyUI();
+            NetworkManager.Singleton.OnClientDisconnectCallback += (id) => {
+                // Si un jugador se desconecta, recalculamos los listos. 
+                // (Una lógica más avanzada podría descontar si el que se fue estaba listo)
+                // Por ahora, solo actualizamos el total.
+                UpdateHostLobbyUI();
+            };
+        }
 
     }
 
@@ -405,21 +409,6 @@ public class GameManager : NetworkBehaviour
             }
         }
         base.OnNetworkDespawn();
-    }
-
-
-    [ClientRpc]
-    private void partidalistaClientRpc()
-    {
-        partidalista = true;
-        Coins = GameObject.FindGameObjectsWithTag("Moneda");
-        if (gameMode == GameMode.Tiempo)
-        {
-            for (int i = 0; i < Coins.Length; i++)
-            {
-                Coins[i].SetActive(false);
-            }
-        }
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -504,55 +493,30 @@ public class GameManager : NetworkBehaviour
         UIManager.Instance?.ForceRefreshCounts(); // Asegúrate de refrescar la UI
     }
 
-
-    [ServerRpc(RequireOwnership = false)]
-    public void PlayerReadyServerRpc(ulong clientId)
-    {
-        switch (clientId)
-        {
-            case 0:
-                jugador1ready = true;
-                break;
-            case 1:
-                jugador2ready = true;
-                break;
-            case 2:
-                jugador3ready = true;
-                break;
-            case 3:
-                jugador4ready = true;
-                break;
-        }
-    }
-
     public void AvisarServerJugadorListo_out()
     {
-        // 1. Validar y obtener el nombre del InputField
-        string chosenName = "Jugador Anónimo";
-        if (nameInputField != null && !string.IsNullOrEmpty(nameInputField.text))
-        {
-            chosenName = nameInputField.text;
-        }
-
-        // 2. Obtener el PlayerController del jugador LOCAL
+        // 1. Lógica del nombre (se queda igual)
+        string chosenName = nameInputField.text;
         var localPlayerController = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerController>();
-
-        // 3. Llamar al RPC del PlayerController para que el servidor actualice su nombre
         if (localPlayerController != null)
         {
             localPlayerController.SetPlayerNameServerRpc(chosenName);
         }
-        else
-        {
-            Debug.LogError("No se encontró el PlayerController del jugador local.");
-            return;
-        }
 
-        ulong clientId = NetworkManager.Singleton.LocalClientId;
-        PlayerReadyServerRpc(clientId);
+        // 2. Avisamos al servidor que estamos listos
+        PlayerClickedReadyServerRpc();
+
+        // 3. Desactivamos el botón para no poder pulsarlo más
+        readyButton.interactable = false;
     }
 
     // EN GameManager.cs
+    [ServerRpc(RequireOwnership = false)]
+    private void PlayerClickedReadyServerRpc()
+    {
+        // El servidor simplemente incrementa el contador.
+        readyPlayerCount.Value++;
+    }
 
     public bool AsignarRol(ulong clientId)
     {
@@ -645,5 +609,70 @@ public class GameManager : NetworkBehaviour
             // Fallback por si algo sale mal
             return new Vector3(4, 1, 13);
         }
+    }
+
+    // EN GameManager.cs
+    private void ConfigureLobbyUI()
+    {
+        if (IsHost)
+        {
+            readyButton.gameObject.SetActive(false);
+            startGameButton.gameObject.SetActive(true);
+            readyCountText.gameObject.SetActive(true);
+            startGameButton.onClick.AddListener(TellServerToStartGame);
+            UpdateHostLobbyUI(); // Actualizamos la UI del host por primera vez
+        }
+        else // Es un cliente
+        {
+            readyButton.gameObject.SetActive(true);
+            startGameButton.gameObject.SetActive(false);
+            readyCountText.gameObject.SetActive(false);
+        }
+    }
+    // EN GameManager.cs
+    private void UpdateHostLobbyUI()
+    {
+        if (!IsHost) return;
+
+        int totalPlayers = NetworkManager.Singleton.ConnectedClients.Count;
+        readyCountText.text = $"Listos: {readyPlayerCount.Value} / {totalPlayers}";
+
+        // El host puede empezar si hay al menos 2 jugadores listos y todos los que están conectados están listos.
+        bool todosLosConectadosEstanListos = (readyPlayerCount.Value == totalPlayers);
+        startGameButton.interactable = (readyPlayerCount.Value >= 2 && todosLosConectadosEstanListos);
+    }
+
+    // EN GameManager.cs
+    private void OnReadyCountChanged(int previousValue, int newValue)
+    {
+        // El host actualiza su UI cuando el contador cambia
+        if (IsHost)
+        {
+            UpdateHostLobbyUI();
+        }
+    }
+
+    // EN GameManager.cs
+    private void TellServerToStartGame()
+    {
+        // Este método es llamado por el botón del Host
+        TellServerToStartGameServerRpc();
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void TellServerToStartGameServerRpc()
+    {
+        // El servidor recibe la orden y avisa a todos los clientes para que empiecen
+        partidalista = true;
+        StartGameClientRpc();
+    }
+
+    [ClientRpc]
+    private void StartGameClientRpc()
+    {
+        // Todos los clientes (incluido el host) reciben esta llamada
+        Debug.Log("¡La partida comienza!");
+        StartPanel.SetActive(false); // Ocultamos el panel de inicio
+                                     // Aquí puedes añadir más lógica de inicio de partida si es necesario
     }
 }
