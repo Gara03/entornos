@@ -2565,7 +2565,7 @@ MonoBehaviour:
   _NetworkManager: {fileID: 1462734842}
   coinManager: {fileID: 0}
   playerPrefab: {fileID: 8947290730586645348, guid: cb4f2926f9ddb634fb81430a923273a9, type: 3}
-  zombiePrefab: {fileID: 4242402687381181303, guid: 42625083221c5f4428e9a69d2f9deef2, type: 3}
+  zombiePrefab: {fileID: 8947290730586645348, guid: 43f6082805831dc419f522fb19f4e2cf, type: 3}
   maxHumans: 2
   maxZombies: 2
   T_Moneda: {fileID: 1683663148}
