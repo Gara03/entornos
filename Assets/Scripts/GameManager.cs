@@ -550,68 +550,67 @@ public class GameManager : NetworkBehaviour
         PlayerReadyServerRpc(clientId);
     }
 
-    public bool AsignarRol(ulong clientId) // Public para que PlayerController lo pueda usar si se convierte
+    // EN GameManager.cs
+
+    public bool AsignarRol(ulong clientId)
     {
         int totalZombies = 0;
         int totalHumanos = 0;
 
-        foreach (var entry in playerRoles.Values)
+        // Contamos los roles actuales. Esta parte estaba bien.
+        foreach (var rol in playerRoles.Values)
         {
-            if (entry) totalZombies++;
-            else totalHumanos++;
+            if (rol) totalZombies++; // true es zombi
+            else totalHumanos++;    // false es humano
         }
 
-        // --- Lógica de asignación de roles. Asegúrate de que el rol se guarda correctamente en playerRoles.
-        // --- Si un jugador ya está en playerRoles, significa que ya tiene un rol.
-        // --- Esta lógica parece asignar el rol solo al conectarse.
-        // --- Si un humano se convierte en zombie, playerRoles DEBE actualizarse en el servidor
-        // --- y luego esa actualización debe propagarse a los clientes.
+        // Determinar el rol preferido para mantener el equilibrio
+        // Si Z <= H, queremos un Zombi para igualar. Si no (Z > H), queremos un Humano.
+        bool preferirHumano = (totalZombies > totalHumanos);
 
-        bool assignedRole = false;
-        if (NetworkManager.Singleton.IsHost && clientId == NetworkManager.Singleton.LocalClientId)
+        // --- Lógica de Asignación Simplificada ---
+
+        if (preferirHumano)
         {
-            // El host es siempre zombie
-            playerRoles[clientId] = true;
-            Debug.Log($"Jugador {clientId} (Host) asignado como ZOMBI");
-            assignedRole = true;
-            return false; // Retorna false si es zombie (isHuman = false)
+            // Se prefieren humanos porque ya hay más zombis.
+            if (totalHumanos < maxHumans)
+            {
+                playerRoles[clientId] = false; // Asignar Humano
+                Debug.Log($"Jugador {clientId} asignado como HUMANO (Regla: Z > H). Equipos: {totalHumanos + 1}H/{totalZombies}Z");
+                return true; // isHuman = true
+            }
         }
-        else if (totalZombies == 0 && totalHumanos == 0) // Primer jugador (no host si host ya asignó)
+        else // Se prefieren zombis (porque Zombis <= Humanos)
         {
-            playerRoles[clientId] = true;
-            Debug.Log($"Jugador {clientId} asignado como ZOMBI (primer jugador)");
-            assignedRole = true;
-            return false;
+            if (totalZombies < maxZombies)
+            {
+                playerRoles[clientId] = true; // Asignar Zombi
+                Debug.Log($"Jugador {clientId} asignado como ZOMBI (Regla: Z <= H). Equipos: {totalHumanos}H/{totalZombies + 1}Z");
+                return false; // isHuman = false
+            }
         }
-        else if (totalZombies < totalHumanos && totalZombies < maxZombies)
-        {
-            playerRoles[clientId] = true;
-            Debug.Log($"Jugador {clientId} asignado como ZOMBI");
-            assignedRole = true;
-            return false;
-        }
-        else if (totalHumanos < maxHumans) // Priorizar humanos si hay espacio
+
+        // --- Fallback: El equipo preferido estaba lleno, intentamos con el otro ---
+        Debug.LogWarning("El equipo preferido estaba lleno. Intentando asignar al equipo alternativo.");
+
+        if (totalHumanos < maxHumans) // ¿Hay hueco para un humano como segunda opción?
         {
             playerRoles[clientId] = false;
-            Debug.Log($"Jugador {clientId} asignado como HUMANO");
-            assignedRole = true;
+            Debug.Log($"Jugador {clientId} asignado como HUMANO (Fallback). Equipos: {totalHumanos + 1}H/{totalZombies}Z");
             return true;
         }
-        else if (totalZombies < maxZombies) // Si no hay espacio para humanos, y hay espacio para zombies
+        else if (totalZombies < maxZombies) // ¿Hay hueco para un zombi como segunda opción?
         {
             playerRoles[clientId] = true;
-            Debug.Log($"Jugador {clientId} asignado como ZOMBI");
-            assignedRole = true;
+            Debug.Log($"Jugador {clientId} asignado como ZOMBI (Fallback). Equipos: {totalHumanos}H/{totalZombies + 1}Z");
             return false;
         }
-        // Fallback: si no se pudo asignar por límite o lógica
-        if (!assignedRole)
-        {
-            Debug.LogWarning("No se pudo asignar rol. Asignando como HUMANO por defecto (o ya en límite).");
-            playerRoles[clientId] = false; // Asignar como humano por defecto si no hay otra opción
-            return true;
-        }
-        return false; // Por defecto, si no se cumple ninguna condición previa (debería ser inalcanzable con la lógica de assignedRole)
+
+        // Si llegamos aquí, es que el juego está completamente lleno.
+        Debug.LogError($"No se pudo asignar rol para {clientId}. El juego está lleno. Desconectando jugador (o manejar de otra forma).");
+        // Aquí podrías desconectar al cliente porque no hay sitio. Por ahora, lo asignamos como humano.
+        playerRoles[clientId] = false;
+        return true;
     }
 
     // EN GameManager.cs
