@@ -642,7 +642,6 @@ public class GameManager : NetworkBehaviour
         startGameButton.interactable = (readyPlayerCount.Value >= 2 && todosLosConectadosEstanListos);
     }
 
-    // EN GameManager.cs
     private void OnReadyCountChanged(int previousValue, int newValue)
     {
         // El host actualiza su UI cuando el contador cambia
@@ -652,9 +651,24 @@ public class GameManager : NetworkBehaviour
         }
     }
 
-    // EN GameManager.cs
     private void TellServerToStartGame()
     {
+        // 1. Validar y obtener el nombre del Host desde el InputField.
+        string hostName = "Host Anónimo"; // Nombre por defecto por si está vacío.
+        if (nameInputField != null && !string.IsNullOrEmpty(nameInputField.text))
+        {
+            hostName = nameInputField.text;
+        }
+
+        // 2. Obtener el PlayerController del Host (que es el jugador local en esta máquina).
+        var localPlayerController = NetworkManager.Singleton.LocalClient.PlayerObject.GetComponent<PlayerController>();
+
+        // 3. Llamar al RPC para que el servidor actualice el nombre del Host.
+        if (localPlayerController != null)
+        {
+            localPlayerController.SetPlayerNameServerRpc(hostName);
+        }
+
         // Este método es llamado por el botón del Host
         TellServerToStartGameServerRpc();
     }
