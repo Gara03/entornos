@@ -53,8 +53,9 @@ public class GameManager : NetworkBehaviour
 
     [SerializeField] private GameObject coinManagerPrefab;
 
-    private List<Vector3> humanSpawnPoints = new List<Vector3>();
-    private List<Vector3> zombieSpawnPoints = new List<Vector3>();
+    [Header("Puntos de Spawn Manuales")]
+    [SerializeField] private List<Transform> humanSpawnPoints;
+    [SerializeField] private List<Transform> zombieSpawnPoints;
     private float remainingSeconds;
 
 
@@ -353,6 +354,7 @@ public class GameManager : NetworkBehaviour
     {
         if (IsServer)
         {
+            playerRoles.Clear();
             seed = Random.Range(int.MinValue, int.MaxValue);
             Debug.Log("[GameManager] OnNetworkSpawn() en servidor.");
             if (levelBuilder == null)
@@ -362,8 +364,8 @@ public class GameManager : NetworkBehaviour
             }
 
             levelBuilder.Build(seed);
-            humanSpawnPoints = levelBuilder.GetHumanSpawnPoints();
-            zombieSpawnPoints = levelBuilder.GetZombieSpawnPoints();
+            //humanSpawnPoints = levelBuilder.GetHumanSpawnPoints();
+            //zombieSpawnPoints = levelBuilder.GetZombieSpawnPoints();
 
             InformClientsToBuildLevelClientRpc(seed);
 
@@ -613,30 +615,35 @@ public class GameManager : NetworkBehaviour
         return true;
     }
 
-    // EN GameManager.cs
     private Vector3 ObtenerPuntoDeSpawn(bool isHuman)
     {
         if (isHuman)
         {
             int numHumanos = 0;
             foreach (var rol in playerRoles.Values) { if (!rol) numHumanos++; }
-            int spawnIndex = numHumanos - 1; // Índice correcto (0 para el primero, 1 para el segundo...)
+            int spawnIndex = numHumanos - 1;
+
             if (spawnIndex >= 0 && spawnIndex < humanSpawnPoints.Count)
             {
-                return humanSpawnPoints[spawnIndex];
+                // Devolvemos la posición del Transform en la lista
+                return humanSpawnPoints[spawnIndex].position;
             }
-            return humanSpawnPoints.Count > 0 ? humanSpawnPoints[0] : Vector3.zero;
+            // Fallback por si algo sale mal
+            return new Vector3(13, 1, 13);
         }
         else // Es Zombi
         {
             int numZombis = 0;
             foreach (var rol in playerRoles.Values) { if (rol) numZombis++; }
             int spawnIndex = numZombis - 1;
+
             if (spawnIndex >= 0 && spawnIndex < zombieSpawnPoints.Count)
             {
-                return zombieSpawnPoints[spawnIndex];
+                // Devolvemos la posición del Transform en la lista
+                return zombieSpawnPoints[spawnIndex].position;
             }
-            return zombieSpawnPoints.Count > 0 ? zombieSpawnPoints[0] : Vector3.zero;
+            // Fallback por si algo sale mal
+            return new Vector3(4, 1, 13);
         }
     }
 }

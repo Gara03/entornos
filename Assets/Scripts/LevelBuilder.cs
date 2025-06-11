@@ -94,20 +94,40 @@ public class LevelBuilder : NetworkBehaviour
     /// <summary>
     /// Crea una matriz de habitaciones y calcula los puntos de aparición.
     /// </summary>
+    // EN LevelBuilder.cs
+
     private void CreateRooms(int roomWidth, int roomLength, int numberOfRooms)
     {
-        int rows = Mathf.CeilToInt(Mathf.Sqrt(numberOfRooms)); // Filas
-        int cols = Mathf.CeilToInt((float)numberOfRooms / rows); // Columnas
+        // 1. Limpiamos las listas para asegurarnos de que no hay puntos de spawn antiguos.
+        humanSpawnPoints.Clear();
+        zombieSpawnPoints.Clear();
+
+        // 2. Añadimos las coordenadas exactas que queremos para los HUMANOS.
+        //    Nota: Uso Y=1 para que no aparezcan justo en el suelo y lo atraviesen. Ajústalo si es necesario.
+        humanSpawnPoints.Add(new Vector3(13, 1, 13));
+        humanSpawnPoints.Add(new Vector3(4, 1, 4));
+
+        // 3. Añadimos las coordenadas exactas que queremos para los ZOMBIES.
+        zombieSpawnPoints.Add(new Vector3(13, 1, 4));
+        zombieSpawnPoints.Add(new Vector3(4, 1, 13));
+
+
+        Debug.Log("Puntos de spawn 'a fuego' (hardcoded) asignados.");
+
+   
+        int rows = Mathf.CeilToInt(Mathf.Sqrt(numberOfRooms));
+        int cols = Mathf.CeilToInt((float)numberOfRooms / rows);
 
         for (int i = 0; i < rows; i++)
         {
             for (int j = 0; j < cols; j++)
             {
-                float x = j * roomWidth;  // Posición X
-                float z = i * roomLength; // Posición Z
+                float x = j * roomWidth;
+                float z = i * roomLength;
 
                 CreateRoom(roomWidth, roomLength, x, z);
 
+                /*
                 Vector3 spawnPoint = new Vector3(x + roomWidth / 2, 2, z + roomLength / 2);
 
                 Debug.Log($"[LevelBuilder] Spawn point calculado: {spawnPoint}");
@@ -119,6 +139,7 @@ public class LevelBuilder : NetworkBehaviour
                 {
                     zombieSpawnPoints.Add(spawnPoint);
                 }
+                */
             }
         }
 
